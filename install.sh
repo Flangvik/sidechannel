@@ -296,6 +296,45 @@ if [ "$SKIP_SIGNAL" = false ]; then
     echo ""
 
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        # Check if this is a remote/headless deployment
+        REMOTE_MODE=false
+        SIGNAL_BIND="127.0.0.1"
+
+        echo ""
+        echo -e "Is this a ${YELLOW}remote/headless${NC} server (e.g., VPS, cloud instance)?"
+        echo "If yes, the QR code will be made available over the network so you"
+        echo "can access it from your local browser to pair your phone."
+        echo ""
+        read -p "Remote deployment? [y/N] " -n 1 -r
+        echo ""
+
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            REMOTE_MODE=true
+            SIGNAL_BIND="0.0.0.0"
+            echo ""
+            echo -e "${RED}╔════════════════════════════════════════════════════════════════╗${NC}"
+            echo -e "${RED}║                    ⚠  SECURITY WARNING  ⚠                     ║${NC}"
+            echo -e "${RED}╠════════════════════════════════════════════════════════════════╣${NC}"
+            echo -e "${RED}║                                                                ║${NC}"
+            echo -e "${RED}║  The Signal API will be temporarily bound to 0.0.0.0:8080      ║${NC}"
+            echo -e "${RED}║  This means it is accessible from ANY network interface.       ║${NC}"
+            echo -e "${RED}║                                                                ║${NC}"
+            echo -e "${RED}║  After device linking completes, the container will be          ║${NC}"
+            echo -e "${RED}║  restarted on 127.0.0.1 (localhost only).                      ║${NC}"
+            echo -e "${RED}║                                                                ║${NC}"
+            echo -e "${RED}║  Make sure your firewall only allows trusted IPs on port 8080. ║${NC}"
+            echo -e "${RED}║                                                                ║${NC}"
+            echo -e "${RED}╚════════════════════════════════════════════════════════════════╝${NC}"
+            echo ""
+            read -p "Continue with remote mode? [y/N] " -n 1 -r
+            echo ""
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                REMOTE_MODE=false
+                SIGNAL_BIND="127.0.0.1"
+                echo "Falling back to localhost-only mode."
+            fi
+        fi
+
         # Pull the Docker image
         echo -e "${CYAN}Pulling Signal CLI REST API image...${NC}"
         docker pull bbernhard/signal-cli-rest-api:0.80
@@ -308,11 +347,11 @@ if [ "$SKIP_SIGNAL" = false ]; then
         docker stop signal-api 2>/dev/null || true
         docker rm signal-api 2>/dev/null || true
 
-        # Start new container
+        # Start new container (bind address depends on remote mode)
         docker run -d \
             --name signal-api \
             --restart unless-stopped \
-            -p 8080:8080 \
+            -p "$SIGNAL_BIND:8080:8080" \
             -v "$SIGNAL_DATA_DIR:/home/.local/share/signal-cli" \
             -e MODE=native \
             bbernhard/signal-cli-rest-api:0.80
@@ -336,7 +375,7 @@ if [ "$SKIP_SIGNAL" = false ]; then
         echo -e "${GREEN}║  1. Open Signal on your phone                                  ║${NC}"
         echo -e "${GREEN}║  2. Go to Settings > Linked Devices                            ║${NC}"
         echo -e "${GREEN}║  3. Tap 'Link New Device'                                      ║${NC}"
-        echo -e "${GREEN}║  4. A QR code will appear below - scan it with your phone      ║${NC}"
+        echo -e "${GREEN}║  4. Scan the QR code (see options below)                        ║${NC}"
         echo -e "${GREEN}║                                                                ║${NC}"
         echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
         echo ""
@@ -350,29 +389,55 @@ if [ "$SKIP_SIGNAL" = false ]; then
 
         if echo "$LINK_RESPONSE" | grep -q "error"; then
             echo -e "${YELLOW}Note: QR code generation requires terminal QR display.${NC}"
-            echo ""
-            echo "To link manually, visit: http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel"
-            echo "Or use the Signal CLI REST API Swagger UI at: http://127.0.0.1:8080/swagger/index.html"
         fi
 
-        # Try to display QR code if qrencode is available
-        if command -v qrencode &> /dev/null; then
-            # Get the link URI
-            LINK_URI=$(curl -s "http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel" | grep -o 'sgnl://[^"]*' 2>/dev/null || true)
-            if [ -n "$LINK_URI" ]; then
-                echo "$LINK_URI" | qrencode -t ANSIUTF8
-            fi
-        else
+        # Try to display QR code in terminal if qrencode is available
+        LINK_URI=$(curl -s "http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel" | grep -o 'sgnl://[^"]*' 2>/dev/null || true)
+
+        if command -v qrencode &> /dev/null && [ -n "$LINK_URI" ]; then
+            echo -e "${GREEN}Terminal QR Code:${NC}"
             echo ""
-            echo -e "${YELLOW}Tip: Install 'qrencode' to display QR codes in terminal:${NC}"
+            echo "$LINK_URI" | qrencode -t ANSIUTF8
+            echo ""
+        fi
+
+        # Save QR code as PNG image file
+        QR_IMAGE="$INSTALL_DIR/qrcode-link.png"
+        if command -v qrencode &> /dev/null && [ -n "$LINK_URI" ]; then
+            echo "$LINK_URI" | qrencode -t PNG -o "$QR_IMAGE" -s 10
+            echo -e "${GREEN}QR code saved to:${NC} $QR_IMAGE"
+            echo "  Download it with: scp $(whoami)@$(hostname):$QR_IMAGE ."
+            echo ""
+        fi
+
+        # Remote access instructions
+        if [ "$REMOTE_MODE" = true ]; then
+            # Detect the server's public/external IP
+            SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+            if [ -z "$SERVER_IP" ]; then
+                SERVER_IP="<your-server-ip>"
+            fi
+
+            echo -e "${CYAN}Remote QR Code Access:${NC}"
+            echo ""
+            echo "  Open this URL in your local browser to view the QR code:"
+            echo -e "  ${CYAN}http://${SERVER_IP}:8080/v1/qrcodelink?device_name=sidechannel${NC}"
+            echo ""
+            echo "  Or use the Swagger UI:"
+            echo -e "  ${CYAN}http://${SERVER_IP}:8080/swagger/index.html${NC}"
+            echo ""
+        else
+            echo "  Local browser: http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel"
+            echo ""
+        fi
+
+        if ! command -v qrencode &> /dev/null; then
+            echo -e "${YELLOW}Tip: Install 'qrencode' for terminal QR display and PNG export:${NC}"
             echo "  sudo apt install qrencode  # Debian/Ubuntu"
             echo "  brew install qrencode      # macOS"
             echo ""
-            echo "For now, open this URL in a browser to see the QR code:"
-            echo -e "${CYAN}http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel${NC}"
         fi
 
-        echo ""
         read -p "Press Enter after you've scanned the QR code and linked the device..."
 
         # Verify linking
@@ -392,6 +457,35 @@ if [ "$SKIP_SIGNAL" = false ]; then
         else
             echo -e "${YELLOW}Warning: Could not verify device link${NC}"
             echo "Check http://127.0.0.1:8080/v1/accounts to verify"
+        fi
+
+        # If remote mode was used, restart container on localhost only
+        if [ "$REMOTE_MODE" = true ]; then
+            echo ""
+            echo -e "${CYAN}Switching Signal API to localhost-only (securing)...${NC}"
+            docker stop signal-api 2>/dev/null || true
+            docker rm signal-api 2>/dev/null || true
+
+            docker run -d \
+                --name signal-api \
+                --restart unless-stopped \
+                -p 127.0.0.1:8080:8080 \
+                -v "$SIGNAL_DATA_DIR:/home/.local/share/signal-cli" \
+                -e MODE=native \
+                bbernhard/signal-cli-rest-api:0.80
+
+            sleep 3
+            if docker ps | grep -q signal-api; then
+                echo -e "  ${GREEN}✓${NC} Signal API now bound to 127.0.0.1 only"
+            else
+                echo -e "${RED}Error: Failed to restart Signal container on localhost${NC}"
+            fi
+        fi
+
+        # Clean up QR code image
+        if [ -f "$QR_IMAGE" ]; then
+            rm -f "$QR_IMAGE"
+            echo -e "  ${GREEN}✓${NC} QR code image cleaned up"
         fi
 
         echo -e "  ${GREEN}✓${NC} Signal CLI REST API configured"
