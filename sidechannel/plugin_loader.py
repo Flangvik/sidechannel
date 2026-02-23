@@ -18,6 +18,22 @@ from .plugin_base import (
 
 logger = structlog.get_logger()
 
+# Register 'sidechannel' as a module alias so plugins can always
+# `from sidechannel.plugin_base import ...` even when the package
+# is deployed as 'signal_claude_bot' (via sync.sh).
+_parent_pkg = __name__.rsplit(".", 1)[0]
+if _parent_pkg != "sidechannel":
+    # Alias the top-level package
+    sys.modules["sidechannel"] = sys.modules[_parent_pkg]
+    # Also alias all already-imported submodules (e.g. plugin_base)
+    # so `from sidechannel.plugin_base import X` returns the same
+    # class objects as `from signal_claude_bot.plugin_base import X`.
+    _prefix = _parent_pkg + "."
+    for _key, _mod in list(sys.modules.items()):
+        if _key.startswith(_prefix):
+            _alias = "sidechannel" + _key[len(_parent_pkg):]
+            sys.modules[_alias] = _mod
+
 
 class PluginLoader:
     """Discovers, loads, and manages the lifecycle of sidechannel plugins."""
