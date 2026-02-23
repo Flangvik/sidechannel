@@ -729,19 +729,6 @@ plugins:
 
 Responds to natural language like "play jazz in the bedroom" and registers `/music` for direct control.
 
-### Deployment: Syncing Updates
-
-sidechannel is the authoritative codebase. Your signal bot deployment includes a `sync.sh` script that pulls updates from the sidechannel source:
-
-```bash
-# From your signal bot directory (e.g. ~/signal)
-./sync.sh
-
-# Or specify a custom sidechannel source location
-./sync.sh /path/to/sidechannel
-```
-
-The sync copies core code and example plugins but **preserves your config**, secrets, databases, and logs. Your custom plugins in the target's `plugins/` directory are also preserved.
 
 ## How the Memory System Works
 

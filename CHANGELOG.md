@@ -15,7 +15,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Priority message routing** — plugins can intercept messages before default routing
 - **Daily verse plugin** — scheduled Bible verse delivery (extracted from signal bot)
 - **BluOS music plugin** — multi-room speaker control (extracted from signal bot)
-- **Sync script** (`sync.sh`) — sync sidechannel core into deployment instances
 - **Exception hierarchy** (`exceptions.py`) — structured error classification with retry support
 - **Attachment handling** (`attachments.py`) — image download and processing with size limits
 - **PRD builder** (`prd_builder.py`) — robust JSON parsing for autonomous PRDs
