@@ -320,7 +320,8 @@ class AutonomousDatabase:
             """
             SELECT s.*,
                    COUNT(t.id) as total_tasks,
-                   SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) as completed_tasks
+                   SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) as completed_tasks,
+                   SUM(CASE WHEN t.status = 'failed' THEN 1 ELSE 0 END) as failed_tasks
             FROM stories s
             LEFT JOIN tasks t ON t.story_id = s.id
             WHERE s.id = ?
@@ -354,6 +355,7 @@ class AutonomousDatabase:
             metadata=json.loads(row["metadata"]) if row["metadata"] else None,
             total_tasks=row["total_tasks"] or 0,
             completed_tasks=row["completed_tasks"] or 0,
+            failed_tasks=row["failed_tasks"] or 0,
         )
 
     async def list_stories(

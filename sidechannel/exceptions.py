@@ -18,7 +18,7 @@ class ErrorCategory(str, Enum):
     INFRASTRUCTURE = "infrastructure"  # CLI not found, env issues
 
 
-class SidechannelError(Exception):
+class SignalBotError(Exception):
     """Base exception for all Sidechannel errors.
 
     All custom exceptions inherit from this, enabling broad catches
@@ -67,11 +67,15 @@ class SidechannelError(Exception):
         )
 
 
+# Backward-compatible alias — new name for the same base class
+SidechannelError = SignalBotError
+
+
 # ---------------------------------------------------------------------------
 # Autonomous subsystem exceptions
 # ---------------------------------------------------------------------------
 
-class AutonomousTaskError(SidechannelError):
+class AutonomousTaskError(SignalBotError):
     """Error during autonomous task execution.
 
     Attributes:
@@ -172,7 +176,7 @@ class TaskDependencyError(AutonomousTaskError):
 # Claude / Sidechannel runner exceptions
 # ---------------------------------------------------------------------------
 
-class ClaudeRunnerError(SidechannelError):
+class ClaudeRunnerError(SignalBotError):
     """Error from the Claude CLI subprocess runner.
 
     Attributes:
@@ -194,7 +198,7 @@ class ClaudeRunnerError(SidechannelError):
         )
 
 
-class SidechannelRunnerError(SidechannelError):
+class SidechannelRunnerError(SignalBotError):
     """Error from the Sidechannel runner."""
 
     def __init__(
@@ -214,7 +218,7 @@ class SidechannelRunnerError(SidechannelError):
 # Memory subsystem exceptions
 # ---------------------------------------------------------------------------
 
-class MemorySystemError(SidechannelError):
+class MemorySystemError(SignalBotError):
     """Error in the memory/conversation storage system."""
 
     def __init__(
@@ -234,7 +238,7 @@ class MemorySystemError(SidechannelError):
 # Configuration exceptions
 # ---------------------------------------------------------------------------
 
-class ConfigurationError(SidechannelError):
+class ConfigurationError(SignalBotError):
     """Invalid or missing configuration.
 
     Defaults to INFRASTRUCTURE because config issues are environmental
@@ -260,7 +264,7 @@ class ConfigurationError(SidechannelError):
 # Database exceptions
 # ---------------------------------------------------------------------------
 
-class DatabaseError(SidechannelError):
+class DatabaseError(SignalBotError):
     """Error during database operations.
 
     Attributes:
@@ -289,19 +293,56 @@ class DatabaseError(SidechannelError):
 # Security exceptions
 # ---------------------------------------------------------------------------
 
-class SecurityError(SidechannelError):
+class SecurityError(SignalBotError):
     """Security violation or suspicious activity detected.
 
-    Always PERMANENT -- security violations must never be retried.
+    Defaults to PERMANENT -- security violations should not normally be retried.
     """
 
     def __init__(
         self,
         message: str = "",
         *,
+        category: ErrorCategory = ErrorCategory.PERMANENT,
         module: Optional[str] = None,
         **context: Any,
     ) -> None:
         super().__init__(
-            message, category=ErrorCategory.PERMANENT, module=module or "security", **context
+            message, category=category, module=module or "security", **context
+        )
+
+
+# ---------------------------------------------------------------------------
+# Additional exceptions
+# ---------------------------------------------------------------------------
+
+class GrokRunnerError(SignalBotError):
+    """Error from the Grok/sidechannel AI assistant runner."""
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        category: ErrorCategory = ErrorCategory.PERMANENT,
+        module: Optional[str] = None,
+        **context: Any,
+    ) -> None:
+        super().__init__(
+            message, category=category, module=module or "grok_runner", **context
+        )
+
+
+class MusicControlError(SignalBotError):
+    """Error from a music control plugin."""
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        category: ErrorCategory = ErrorCategory.TRANSIENT,
+        module: Optional[str] = None,
+        **context: Any,
+    ) -> None:
+        super().__init__(
+            message, category=category, module=module or "music", **context
         )

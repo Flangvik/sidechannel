@@ -46,6 +46,9 @@ Thumbs.db
 *.bak
 *.tmp
 
+# Tests (development only, not shipped)
+tests/
+
 # Internal plans/docs
 docs/plans/
 

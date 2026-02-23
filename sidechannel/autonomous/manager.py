@@ -172,6 +172,7 @@ class AutonomousManager:
         title: str,
         description: str,
         priority: int = 0,
+        depends_on: Optional[list] = None,
     ) -> Task:
         """Create a new task in a story."""
         task = await self.db.create_task(
@@ -181,6 +182,7 @@ class AutonomousManager:
             title=title,
             description=description,
             priority=priority,
+            depends_on=depends_on,
         )
         logger.info("task_created", task_id=task.id, story_id=story_id, title=title)
         return task
