@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `./install.sh --restart` flag to restart the sidechannel service (systemd or launchd)
+- Projects directory prompt during install — auto-registers all subdirectories as projects
+- `/remove <project>` command to unregister a project from the bot
 
 ### Changed
 - Python requirement lowered from 3.10+ to 3.9+ (compatible with macOS default Python)

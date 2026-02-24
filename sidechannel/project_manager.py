@@ -120,6 +120,30 @@ class ProjectManager:
         else:
             return False, f"Project '{name}' already exists."
 
+    def remove_project(self, name: str) -> Tuple[bool, str]:
+        """Remove a project from the registry."""
+        name_lower = name.strip().lower()
+
+        # Find the actual registered name
+        matched_name = None
+        for p in self.config.get_project_list():
+            if p["name"].lower() == name_lower:
+                matched_name = p["name"]
+                break
+
+        if matched_name is None:
+            return False, f"Project '{name}' not found. Use /projects to see registered projects."
+
+        self.config.remove_project(matched_name)
+        logger.info("project_removed", name=matched_name)
+
+        # Clear selection if we just removed the active project
+        if self.current_project and self.current_project.lower() == name_lower:
+            self.current_project = None
+            self.current_path = None
+
+        return True, f"Removed project: {matched_name}"
+
     def create_project(self, name: str, description: str = "") -> Tuple[bool, str]:
         """Create a new project directory and select it."""
         # Validate name with positive allowlist

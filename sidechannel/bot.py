@@ -298,6 +298,14 @@ class SignalBot:
             success, msg = self.project_manager.add_project(name, path, desc)
             return msg
 
+        elif command == "remove":
+            if not args:
+                return "Usage: /remove <project_name>"
+            success, msg = self.project_manager.remove_project(args)
+            if success and self.project_manager.current_project is None:
+                self.runner.set_project(None)
+            return msg
+
         elif command == "new":
             if not args:
                 return "Usage: /new <project_name> [description]"
@@ -441,6 +449,7 @@ Project Management:
   /projects - List available projects
   /select <project> - Select a project
   /add <name> [path] [desc] - Add existing project
+  /remove <project> - Remove a project from the list
   /new <name> [desc] - Create new project
   /status - Show current project and task status
   /summary - Generate project summary

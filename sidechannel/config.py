@@ -338,6 +338,16 @@ class Config:
         self.save_projects()
         return True
 
+    def remove_project(self, name: str) -> bool:
+        """Remove a project from the registry by name (case-insensitive)."""
+        projects = self.projects.get("projects", [])
+        for i, p in enumerate(projects):
+            if p["name"].lower() == name.lower():
+                projects.pop(i)
+                self.save_projects()
+                return True
+        return False
+
     def get_project_path(self, name: str) -> Optional[Path]:
         """Get the path for a project by name."""
         for p in self.projects.get("projects", []):
