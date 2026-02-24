@@ -5,6 +5,19 @@ All notable changes to sidechannel will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-02-24
+
+### Removed
+- **Docker install mode** — the bot no longer runs in a container; removed `Dockerfile`, `--docker`/`--local` flags, and interactive mode selection menu
+- `sidechannel` service from `docker-compose.yml` — compose now only manages the Signal bridge
+
+### Changed
+- Installer is now a single code path (local Python venv + Signal bridge in Docker)
+- `docker-compose.yml` is a signal-bridge-only compose file
+
+### Fixed
+- Bot startup now retries Signal API connection (12 attempts over ~90s) instead of failing immediately when signal-api is still starting
+
 ## [1.3.0] - 2026-02-24
 
 ### Changed

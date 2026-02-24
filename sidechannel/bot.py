@@ -147,21 +147,58 @@ class SignalBot:
         logger.info("bot_stopped")
 
     async def _get_account(self):
-        """Get the registered Signal account."""
-        try:
-            url = f"{self.config.signal_api_url}/v1/accounts"
-            async with self.session.get(url) as resp:
-                if resp.status == 200:
-                    accounts = await resp.json()
-                    if accounts:
-                        self.account = accounts[0]
-                        logger.info("account_found", account=self.account)
+        """Get the registered Signal account with retry.
+
+        Retries on connection errors and timeouts (signal-api may still be
+        starting).  Does NOT retry when signal-api responds 200 with an
+        empty account list (it's up but unconfigured).
+        """
+        url = f"{self.config.signal_api_url}/v1/accounts"
+        max_attempts = 12
+        base_delay = 5
+        max_delay = 15
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        accounts = await resp.json()
+                        if accounts:
+                            self.account = accounts[0]
+                            logger.info("account_found", account=self.account)
+                            return
+                        else:
+                            # Signal API is up but no accounts registered — don't retry
+                            logger.error("no_accounts_registered")
+                            return
                     else:
-                        logger.error("no_accounts_registered")
+                        logger.warning(
+                            "accounts_request_failed",
+                            status=resp.status,
+                            attempt=attempt,
+                            max_attempts=max_attempts,
+                        )
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if attempt < max_attempts:
+                    delay = min(base_delay * attempt, max_delay)
+                    logger.warning(
+                        "accounts_request_retry",
+                        error=str(e),
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        retry_in=delay,
+                    )
+                    await asyncio.sleep(delay)
                 else:
-                    logger.error("accounts_request_failed", status=resp.status)
-        except Exception as e:
-            logger.error("accounts_request_error", error=str(e))
+                    logger.error(
+                        "accounts_request_error",
+                        error=str(e),
+                        attempts_exhausted=max_attempts,
+                    )
+                    return
+            except Exception as e:
+                logger.error("accounts_request_error", error=str(e))
+                return
 
     async def _send_message(self, recipient: str, message: str):
         """Send a message via Signal."""

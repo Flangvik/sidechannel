@@ -1,9 +1,11 @@
-# sidechannel Docker Compose
-# Runs Signal CLI REST API + sidechannel bot
+# Signal CLI REST API bridge for sidechannel
+#
+# The bot runs natively (Python venv + systemd/launchd).
+# This compose file only runs the Signal messaging bridge.
 #
 # Usage:
 #   docker compose up -d
-#   docker compose logs -f sidechannel
+#   docker compose logs -f signal-api
 
 services:
   signal-api:
@@ -16,20 +18,3 @@ services:
       - ./signal-data:/home/.local/share/signal-cli
     environment:
       - MODE=json-rpc
-
-  sidechannel:
-    build: .
-    container_name: sidechannel
-    restart: unless-stopped
-    depends_on:
-      - signal-api
-    volumes:
-      - ./config:/app/config
-      - ./data:/app/data
-      - ${PROJECTS_DIR:?Set PROJECTS_DIR in .env}:/projects
-      - ${CLAUDE_HOME:-~/.claude}:/root/.claude
-    env_file:
-      - ./config/.env
-    environment:
-      - SIDECHANNEL_CONFIG_DIR=/app/config
-      - SIGNAL_API_URL=http://signal-api:8080

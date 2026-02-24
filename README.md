@@ -88,38 +88,18 @@ cd sidechannel
 ./install.sh
 ```
 
-The installer walks you through everything: phone number, Signal pairing (scan a QR code), and starting the service. No manual setup needed.
-
-### Docker Install (recommended)
-
-Everything runs in containers — one command to start, one to stop.
-
-```bash
-./install.sh --docker
-```
-
-### Local Install
-
-Python runs natively on your machine with a small Docker container for Signal messaging.
-
-```bash
-./install.sh --local
-```
-
-Good for development or if you prefer systemd/launchd service management.
-
-Run `./install.sh` without flags for an interactive menu.
+The installer walks you through everything: Python venv setup, phone number, Signal pairing (scan a QR code), and starting the service. No manual setup needed.
 
 ## Requirements
 
-| | Docker Install | Local Install |
-|---|---|---|
-| **Docker** | Required (with Compose) | Required (Signal bridge only) |
-| **Python 3.10+** | Not needed | Required |
-| **Claude CLI** | Recommended | Recommended |
-| **Signal account** | Required | Required |
+| Dependency | Notes |
+|---|---|
+| **Python 3.10+** | Required |
+| **Docker** | Required for Signal bridge container |
+| **Claude CLI** | Recommended (powers /ask, /do, /complex) |
+| **Signal account** | Required |
 
-Both modes use Docker for the Signal bridge (signal-cli-rest-api) — the difference is whether the Python bot runs in a container or natively.
+The bot runs natively in a Python venv, managed by systemd (Linux) or launchd (macOS). Docker is only used for the Signal bridge (signal-cli-rest-api).
 
 ---
 
@@ -401,35 +381,14 @@ projects:
 
 ## Running
 
-### Docker
-
-```bash
-cd ~/sidechannel
-
-# Start both containers (signal-api + sidechannel)
-docker compose up -d
-
-# View logs
-docker compose logs -f sidechannel
-
-# Restart after config changes
-docker compose restart
-
-# Rebuild after code changes
-docker compose up -d --build
-
-# Stop everything
-docker compose down
-```
-
-### Local — Manual Start
+### Manual Start
 
 ```bash
 cd ~/sidechannel
 ./run.sh
 ```
 
-### Local — Systemd Service (Linux)
+### Systemd Service (Linux)
 
 ```bash
 # Start
@@ -442,7 +401,7 @@ journalctl --user -u sidechannel -f
 systemctl --user stop sidechannel
 ```
 
-### Local — Launchd Service (macOS)
+### Launchd Service (macOS)
 
 ```bash
 # Start
