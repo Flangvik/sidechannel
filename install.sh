@@ -281,26 +281,31 @@ YAML
 EOF
     fi
 
-    # Claude CLI auth check
-    echo ""
-    if command -v claude &> /dev/null || [ -f "$HOME/.local/bin/claude" ]; then
-        echo -e "  ${GREEN}✓${NC} Claude CLI uses its own authentication (via ${CYAN}claude login${NC})"
-        echo -e "    If not already logged in, run: ${CYAN}claude login${NC}"
-    else
-        echo -e "${YELLOW}Note:${NC} After installing Claude CLI, authenticate with: ${CYAN}claude login${NC}"
-    fi
-
     echo ""
     read -p "Enable sidechannel AI assistant (OpenAI or Grok)? [y/N] " -n 1 -r
     echo ""
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         sed_inplace "s/enabled: false/enabled: true/" "$SETTINGS_FILE"
-        echo -e "Enter your Grok API key:"
-        read -p "> " -s GROK_KEY
         echo ""
-        if [ -n "$GROK_KEY" ]; then
-            sed_inplace "s/^# GROK_API_KEY=.*/GROK_API_KEY=$GROK_KEY/" "$ENV_FILE"
-            echo -e "  ${GREEN}✓${NC} Grok enabled and configured"
+        echo "  Which provider? (1) OpenAI  (2) Grok"
+        read -p "  > " PROVIDER_CHOICE
+        echo ""
+        if [ "$PROVIDER_CHOICE" = "1" ]; then
+            echo -e "Enter your OpenAI API key:"
+            read -p "> " -s OPENAI_KEY
+            echo ""
+            if [ -n "$OPENAI_KEY" ]; then
+                sed_inplace "s/^# OPENAI_API_KEY=.*/OPENAI_API_KEY=$OPENAI_KEY/" "$ENV_FILE"
+                echo -e "  ${GREEN}✓${NC} OpenAI enabled and configured"
+            fi
+        else
+            echo -e "Enter your Grok API key:"
+            read -p "> " -s GROK_KEY
+            echo ""
+            if [ -n "$GROK_KEY" ]; then
+                sed_inplace "s/^# GROK_API_KEY=.*/GROK_API_KEY=$GROK_KEY/" "$ENV_FILE"
+                echo -e "  ${GREEN}✓${NC} Grok enabled and configured"
+            fi
         fi
     fi
 
@@ -436,32 +441,6 @@ else
     exit 1
 fi
 
-# Docker (for Signal CLI REST API)
-if [ "$SKIP_SIGNAL" = false ]; then
-    if command -v docker &> /dev/null; then
-        echo -e "  ${GREEN}✓${NC} Docker"
-        # Check Docker daemon is running
-        if ! docker info &> /dev/null; then
-            echo -e "${YELLOW}Warning: Docker daemon is not running.${NC}"
-            echo -e "Start Docker: sudo systemctl start docker"
-            read -p "Continue anyway? [y/N] " -n 1 -r
-            echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                exit 1
-            fi
-        fi
-    else
-        echo -e "${YELLOW}Warning: Docker not found. Signal CLI REST API requires Docker.${NC}"
-        echo -e "Install Docker: https://docs.docker.com/get-docker/"
-        read -p "Continue without Signal setup? [y/N] " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            exit 1
-        fi
-        SKIP_SIGNAL=true
-    fi
-fi
-
 # Claude CLI
 if command -v claude &> /dev/null; then
     echo -e "  ${GREEN}✓${NC} Claude CLI"
@@ -489,7 +468,9 @@ mkdir -p "$INSTALL_DIR"
 mkdir -p "$CONFIG_DIR"
 mkdir -p "$DATA_DIR"
 mkdir -p "$LOGS_DIR"
-mkdir -p "$SIGNAL_DATA_DIR"
+if [ "$SKIP_SIGNAL" = false ]; then
+    mkdir -p "$SIGNAL_DATA_DIR"
+fi
 
 echo -e "  ${GREEN}✓${NC} Created $INSTALL_DIR"
 
@@ -614,97 +595,89 @@ if [ ! -f "$ENV_FILE" ]; then
 EOF
 fi
 
-# Claude CLI auth check
-echo ""
-if command -v claude &> /dev/null || [ -f "$HOME/.local/bin/claude" ]; then
-    echo -e "  ${GREEN}✓${NC} Claude CLI uses its own authentication (via ${CYAN}claude login${NC})"
-    echo -e "    If not already logged in, run: ${CYAN}claude login${NC}"
-else
-    echo -e "${YELLOW}Note:${NC} After installing Claude CLI, authenticate with: ${CYAN}claude login${NC}"
-fi
-
-# Ask about Grok
+# Ask about optional AI assistant
 echo ""
 read -p "Enable sidechannel AI assistant (OpenAI or Grok)? [y/N] " -n 1 -r
 echo ""
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     sed_inplace "s/enabled: false/enabled: true/" "$SETTINGS_FILE"
-    echo -e "Enter your Grok API key:"
-    read -p "> " -s GROK_KEY
     echo ""
-    if [ -n "$GROK_KEY" ]; then
-        sed_inplace "s/^# GROK_API_KEY=.*/GROK_API_KEY=$GROK_KEY/" "$ENV_FILE"
-        echo -e "  ${GREEN}✓${NC} Grok enabled and configured"
+    echo "  Which provider? (1) OpenAI  (2) Grok"
+    read -p "  > " PROVIDER_CHOICE
+    echo ""
+    if [ "$PROVIDER_CHOICE" = "1" ]; then
+        echo -e "Enter your OpenAI API key:"
+        read -p "> " -s OPENAI_KEY
+        echo ""
+        if [ -n "$OPENAI_KEY" ]; then
+            sed_inplace "s/^# OPENAI_API_KEY=.*/OPENAI_API_KEY=$OPENAI_KEY/" "$ENV_FILE"
+            echo -e "  ${GREEN}✓${NC} OpenAI enabled and configured"
+        fi
+    else
+        echo -e "Enter your Grok API key:"
+        read -p "> " -s GROK_KEY
+        echo ""
+        if [ -n "$GROK_KEY" ]; then
+            sed_inplace "s/^# GROK_API_KEY=.*/GROK_API_KEY=$GROK_KEY/" "$ENV_FILE"
+            echo -e "  ${GREEN}✓${NC} Grok enabled and configured"
+        fi
     fi
 fi
 
 # -----------------------------------------------------------------------------
-# Signal CLI REST API Setup
+# Signal Protocol Bridge Setup
 # -----------------------------------------------------------------------------
 if [ "$SKIP_SIGNAL" = false ]; then
     echo ""
-    echo -e "${BLUE}Signal CLI REST API Setup${NC}"
+    echo -e "${BLUE}Signal Device Linking${NC}"
     echo ""
-    echo "sidechannel uses Signal CLI REST API to send/receive messages."
-    echo "This runs as a Docker container on port 8080."
+    echo "  sidechannel communicates via the Signal protocol. This requires a"
+    echo "  lightweight Docker container (signal-cli-rest-api) that acts as a"
+    echo "  bridge between sidechannel and Signal's servers."
     echo ""
 
-    read -p "Set up Signal CLI REST API now? [Y/n] " -n 1 -r
+    # Check Docker is available for the Signal bridge
+    if ! command -v docker &> /dev/null; then
+        echo -e "${YELLOW}  Docker is not installed — skipping Signal setup.${NC}"
+        echo -e "  Install Docker later: ${CYAN}https://docs.docker.com/get-docker/${NC}"
+        echo -e "  Then re-run: ${CYAN}./install.sh --local${NC}"
+        SKIP_SIGNAL=true
+    elif ! docker info &> /dev/null; then
+        echo -e "${YELLOW}  Docker daemon is not running — skipping Signal setup.${NC}"
+        echo -e "  Start Docker, then re-run: ${CYAN}./install.sh --local${NC}"
+        SKIP_SIGNAL=true
+    fi
+fi
+
+if [ "$SKIP_SIGNAL" = false ]; then
+    read -p "Link your Signal account now? [Y/n] " -n 1 -r
     echo ""
 
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-        # Check if this is a remote/headless deployment
+        # Remote/headless detection
         REMOTE_MODE=false
         SIGNAL_BIND="127.0.0.1"
 
-        echo ""
-        echo -e "Is this a ${YELLOW}remote/headless${NC} server (e.g., VPS, cloud instance)?"
-        echo "If yes, the QR code will be made available over the network so you"
-        echo "can access it from your local browser to pair your phone."
-        echo ""
-        read -p "Remote deployment? [y/N] " -n 1 -r
+        read -p "Is this a remote/headless server (VPS, cloud)? [y/N] " -n 1 -r
         echo ""
 
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             REMOTE_MODE=true
             SIGNAL_BIND="0.0.0.0"
             echo ""
-            echo -e "${RED}╔════════════════════════════════════════════════════════════════╗${NC}"
-            echo -e "${RED}║                    ⚠  SECURITY WARNING  ⚠                     ║${NC}"
-            echo -e "${RED}╠════════════════════════════════════════════════════════════════╣${NC}"
-            echo -e "${RED}║                                                                ║${NC}"
-            echo -e "${RED}║  The Signal API will be temporarily bound to 0.0.0.0:8080      ║${NC}"
-            echo -e "${RED}║  This means it is accessible from ANY network interface.       ║${NC}"
-            echo -e "${RED}║                                                                ║${NC}"
-            echo -e "${RED}║  After device linking completes, the container will be          ║${NC}"
-            echo -e "${RED}║  restarted on 127.0.0.1 (localhost only).                      ║${NC}"
-            echo -e "${RED}║                                                                ║${NC}"
-            echo -e "${RED}║  Make sure your firewall only allows trusted IPs on port 8080. ║${NC}"
-            echo -e "${RED}║                                                                ║${NC}"
-            echo -e "${RED}╚════════════════════════════════════════════════════════════════╝${NC}"
+            echo -e "${YELLOW}  Note: Signal API will be temporarily exposed on all interfaces (0.0.0.0:8080)"
+            echo -e "  for QR code access. It will be locked to localhost after linking.${NC}"
             echo ""
-            read -p "Continue with remote mode? [y/N] " -n 1 -r
-            echo ""
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                REMOTE_MODE=false
-                SIGNAL_BIND="127.0.0.1"
-                echo "Falling back to localhost-only mode."
-            fi
         fi
 
-        # Pull the Docker image
-        echo -e "${CYAN}Pulling Signal CLI REST API image...${NC}"
-        docker pull bbernhard/signal-cli-rest-api:0.80
+        mkdir -p "$SIGNAL_DATA_DIR"
 
-        # Start container for linking
-        echo ""
-        echo -e "${CYAN}Starting Signal container for device linking...${NC}"
+        echo -e "${CYAN}Starting Signal bridge container...${NC}"
+        docker pull bbernhard/signal-cli-rest-api:0.80 -q
 
-        # Stop any existing container
         docker stop signal-api 2>/dev/null || true
         docker rm signal-api 2>/dev/null || true
 
-        # Start new container (bind address depends on remote mode)
         docker run -d \
             --name signal-api \
             --restart unless-stopped \
@@ -713,151 +686,98 @@ if [ "$SKIP_SIGNAL" = false ]; then
             -e MODE=native \
             bbernhard/signal-cli-rest-api:0.80
 
-        # Wait for container to start
-        echo "Waiting for container to start..."
+        echo "  Waiting for container..."
         sleep 5
 
-        # Check if container is running
         if ! docker ps | grep -q signal-api; then
             echo -e "${RED}Error: Signal container failed to start${NC}"
-            docker logs signal-api 2>&1 | tail -10
-            exit 1
-        fi
-
-        echo ""
-        echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${GREEN}║                   SIGNAL DEVICE LINKING                        ║${NC}"
-        echo -e "${GREEN}╠════════════════════════════════════════════════════════════════╣${NC}"
-        echo -e "${GREEN}║                                                                ║${NC}"
-        echo -e "${GREEN}║  1. Open Signal on your phone                                  ║${NC}"
-        echo -e "${GREEN}║  2. Go to Settings > Linked Devices                            ║${NC}"
-        echo -e "${GREEN}║  3. Tap 'Link New Device'                                      ║${NC}"
-        echo -e "${GREEN}║  4. Scan the QR code (see options below)                        ║${NC}"
-        echo -e "${GREEN}║                                                                ║${NC}"
-        echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
-        echo ""
-
-        # Request QR code link
-        echo -e "${CYAN}Requesting device link...${NC}"
-        echo ""
-
-        # Generate QR code
-        LINK_RESPONSE=$(curl -s -X GET "http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel" 2>/dev/null)
-
-        if echo "$LINK_RESPONSE" | grep -q "error"; then
-            echo -e "${YELLOW}Note: QR code generation requires terminal QR display.${NC}"
-        fi
-
-        # Try to display QR code in terminal if qrencode is available
-        LINK_URI=$(curl -s "http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel" | grep -o 'sgnl://[^"]*' 2>/dev/null || true)
-
-        if command -v qrencode &> /dev/null && [ -n "$LINK_URI" ]; then
-            echo -e "${GREEN}Terminal QR Code:${NC}"
+            docker logs signal-api 2>&1 | tail -5
+            echo -e "${YELLOW}You can re-run Signal setup later with: ./install.sh --local${NC}"
+        else
             echo ""
-            echo "$LINK_URI" | qrencode -t ANSIUTF8
+            echo -e "${GREEN}  Link your phone to sidechannel:${NC}"
             echo ""
-        fi
-
-        # Save QR code as PNG image file
-        QR_IMAGE="$INSTALL_DIR/qrcode-link.png"
-        if command -v qrencode &> /dev/null && [ -n "$LINK_URI" ]; then
-            echo "$LINK_URI" | qrencode -t PNG -o "$QR_IMAGE" -s 10
-            echo -e "${GREEN}QR code saved to:${NC} $QR_IMAGE"
-            echo "  Download it with: scp $(whoami)@$(hostname):$QR_IMAGE ."
+            echo "  1. Open Signal on your phone"
+            echo "  2. Settings > Linked Devices > Link New Device"
+            echo "  3. Scan the QR code:"
             echo ""
-        fi
 
-        # Remote access instructions
-        if [ "$REMOTE_MODE" = true ]; then
-            # Detect the server's public/external IP
-            SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-            if [ -z "$SERVER_IP" ]; then
-                SERVER_IP="<your-server-ip>"
+            # Get QR code link (single request)
+            LINK_URI=$(curl -s "http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel" | grep -o 'sgnl://[^"]*' 2>/dev/null || true)
+
+            # Terminal QR code
+            if command -v qrencode &> /dev/null && [ -n "$LINK_URI" ]; then
+                echo "$LINK_URI" | qrencode -t ANSIUTF8
+                echo ""
             fi
 
-            echo -e "${CYAN}Remote QR Code Access:${NC}"
-            echo ""
-            echo "  Open this URL in your local browser to view the QR code:"
-            echo -e "  ${CYAN}http://${SERVER_IP}:8080/v1/qrcodelink?device_name=sidechannel${NC}"
-            echo ""
-            echo "  Or use the Swagger UI:"
-            echo -e "  ${CYAN}http://${SERVER_IP}:8080/swagger/index.html${NC}"
-            echo ""
-        else
-            echo "  Local browser: http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel"
-            echo ""
-        fi
-
-        if ! command -v qrencode &> /dev/null; then
-            echo -e "${YELLOW}Tip: Install 'qrencode' for terminal QR display and PNG export:${NC}"
-            echo "  sudo apt install qrencode  # Debian/Ubuntu"
-            echo "  brew install qrencode      # macOS"
-            echo ""
-        fi
-
-        read -p "Press Enter after you've scanned the QR code and linked the device..."
-
-        # Verify linking
-        echo ""
-        echo -e "${CYAN}Verifying device link...${NC}"
-        sleep 2
-
-        ACCOUNTS=$(curl -s "http://127.0.0.1:8080/v1/accounts" 2>/dev/null)
-        if echo "$ACCOUNTS" | grep -q "+"; then
-            LINKED_NUMBER=$(echo "$ACCOUNTS" | grep -o '+[0-9]*' | head -1)
-            echo -e "  ${GREEN}✓${NC} Device linked successfully: $LINKED_NUMBER"
-
-            # Update settings with linked number if different
-            if [ "$LINKED_NUMBER" != "$PHONE_NUMBER" ] && [ -n "$LINKED_NUMBER" ]; then
-                sed_inplace "s/$PHONE_NUMBER/$LINKED_NUMBER/" "$SETTINGS_FILE" 2>/dev/null || true
-            fi
-        else
-            echo -e "${YELLOW}Warning: Could not verify device link${NC}"
-            echo "Check http://127.0.0.1:8080/v1/accounts to verify"
-        fi
-
-        # If remote mode was used, restart container on localhost only
-        if [ "$REMOTE_MODE" = true ]; then
-            echo ""
-            echo -e "${CYAN}Switching Signal API to localhost-only (securing)...${NC}"
-            docker stop signal-api 2>/dev/null || true
-            docker rm signal-api 2>/dev/null || true
-
-            docker run -d \
-                --name signal-api \
-                --restart unless-stopped \
-                -p 127.0.0.1:8080:8080 \
-                -v "$SIGNAL_DATA_DIR:/home/.local/share/signal-cli" \
-                -e MODE=native \
-                bbernhard/signal-cli-rest-api:0.80
-
-            sleep 3
-            if docker ps | grep -q signal-api; then
-                echo -e "  ${GREEN}✓${NC} Signal API now bound to 127.0.0.1 only"
+            # Browser URL
+            if [ "$REMOTE_MODE" = true ]; then
+                SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+                [ -z "$SERVER_IP" ] && SERVER_IP="<your-server-ip>"
+                echo -e "     Browser: ${CYAN}http://${SERVER_IP}:8080/v1/qrcodelink?device_name=sidechannel${NC}"
             else
-                echo -e "${RED}Error: Failed to restart Signal container on localhost${NC}"
+                echo -e "     Browser: ${CYAN}http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel${NC}"
             fi
-        fi
 
-        # Clean up QR code image
-        if [ -f "$QR_IMAGE" ]; then
-            rm -f "$QR_IMAGE"
-            echo -e "  ${GREEN}✓${NC} QR code image cleaned up"
-        fi
+            if ! command -v qrencode &> /dev/null; then
+                echo ""
+                echo -e "     ${YELLOW}Tip:${NC} Install 'qrencode' for terminal QR display"
+            fi
 
-        echo -e "  ${GREEN}✓${NC} Signal CLI REST API configured"
+            echo ""
+            read -p "Press Enter after scanning the QR code..."
+
+            echo ""
+            echo -e "${CYAN}Verifying...${NC}"
+            sleep 2
+
+            ACCOUNTS=$(curl -s "http://127.0.0.1:8080/v1/accounts" 2>/dev/null)
+            if echo "$ACCOUNTS" | grep -q "+"; then
+                LINKED_NUMBER=$(echo "$ACCOUNTS" | grep -o '+[0-9]*' | head -1)
+                echo -e "  ${GREEN}✓${NC} Device linked: $LINKED_NUMBER"
+
+                if [ "$LINKED_NUMBER" != "$PHONE_NUMBER" ] && [ -n "$LINKED_NUMBER" ]; then
+                    sed_inplace "s/$PHONE_NUMBER/$LINKED_NUMBER/" "$SETTINGS_FILE" 2>/dev/null || true
+                fi
+            else
+                echo -e "${YELLOW}  Could not verify link. Check: http://127.0.0.1:8080/v1/accounts${NC}"
+            fi
+
+            # Lock down to localhost if remote mode was used
+            if [ "$REMOTE_MODE" = true ]; then
+                echo -e "${CYAN}  Securing Signal API to localhost only...${NC}"
+                docker stop signal-api 2>/dev/null || true
+                docker rm signal-api 2>/dev/null || true
+
+                docker run -d \
+                    --name signal-api \
+                    --restart unless-stopped \
+                    -p 127.0.0.1:8080:8080 \
+                    -v "$SIGNAL_DATA_DIR:/home/.local/share/signal-cli" \
+                    -e MODE=native \
+                    bbernhard/signal-cli-rest-api:0.80
+
+                sleep 3
+                if docker ps | grep -q signal-api; then
+                    echo -e "  ${GREEN}✓${NC} Signal API secured (127.0.0.1 only)"
+                fi
+            fi
+
+            echo -e "  ${GREEN}✓${NC} Signal bridge configured"
+        fi
     fi
 fi
 
 # -----------------------------------------------------------------------------
 # Systemd service
 # -----------------------------------------------------------------------------
-if [ "$SKIP_SYSTEMD" = false ]; then
+if [ "$SKIP_SYSTEMD" = false ] && [ "$(uname)" = "Linux" ] && command -v systemctl &> /dev/null; then
     echo ""
-    echo -e "${BLUE}Systemd Service Setup${NC}"
+    echo -e "${BLUE}Systemd Service${NC}"
     echo ""
 
-    read -p "Install sidechannel as a systemd service? [Y/n] " -n 1 -r
+    read -p "Install as a systemd service (auto-start on boot)? [Y/n] " -n 1 -r
     echo ""
 
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
@@ -919,22 +839,26 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║              sidechannel installation complete!                ║${NC}"
 echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "Installation directory: ${CYAN}$INSTALL_DIR${NC}"
+echo -e "  Install dir: ${CYAN}$INSTALL_DIR${NC}"
+echo -e "  Config:      ${CYAN}$CONFIG_DIR/settings.yaml${NC}"
 echo ""
 echo -e "${YELLOW}Next steps:${NC}"
 echo ""
-echo "1. Review configuration:"
-echo "   $CONFIG_DIR/settings.yaml"
-echo "   $CONFIG_DIR/.env"
+if ! command -v claude &> /dev/null && ! [ -f "$HOME/.local/bin/claude" ]; then
+    echo "  1. Install Claude CLI: https://docs.anthropic.com/en/docs/claude-code"
+    echo "  2. Authenticate:       claude login"
+else
+    echo "  1. Authenticate Claude (if not already): claude login"
+fi
 echo ""
-echo "2. Start sidechannel:"
-echo "   $RUN_SCRIPT"
+echo "  Start sidechannel:"
+echo "    $RUN_SCRIPT"
 echo ""
-echo "3. Or use systemd:"
-echo "   systemctl --user start sidechannel"
+echo "  Or if you installed the systemd service:"
+echo "    systemctl --user start sidechannel"
 echo ""
-echo "4. Send a message to your Signal number:"
-echo "   /help - Show available commands"
+echo "  Send a message to your Signal number to test:"
+echo "    /help"
 echo ""
 echo -e "${CYAN}Documentation: https://github.com/hackingdave/sidechannel${NC}"
 echo ""
