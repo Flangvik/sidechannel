@@ -1,6 +1,7 @@
 """Tests for auto-update feature."""
 
 import asyncio
+import re
 import subprocess
 
 import pytest
@@ -57,13 +58,13 @@ class TestAutoUpdateConfig:
 class TestAutoUpdater:
     """Tests for AutoUpdater class."""
 
-    def _make_updater(self, send_message=None):
+    def _make_updater(self, send_message=None, branch="main"):
         """Create an AutoUpdater with mocked dependencies."""
         from sidechannel.updater import AutoUpdater
         config = MagicMock()
         config.auto_update_enabled = True
         config.auto_update_check_interval = 21600
-        config.auto_update_branch = "main"
+        config.auto_update_branch = branch
         config.allowed_numbers = ["+15551234567"]
         if send_message is None:
             send_message = AsyncMock()
@@ -72,6 +73,8 @@ class TestAutoUpdater:
             send_message=send_message,
             repo_dir=Path("/fake/repo"),
         )
+
+    # --- check_for_updates tests ---
 
     @pytest.mark.asyncio
     async def test_check_for_updates_no_update(self):
@@ -135,6 +138,18 @@ class TestAutoUpdater:
         send.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_check_for_updates_git_fetch_fails(self):
+        """check_for_updates returns False on git fetch failure (e.g. network down)."""
+        updater = self._make_updater()
+        async def fake_run_git(*args, **kwargs):
+            raise subprocess.CalledProcessError(1, ["git", "fetch"], "", "network error")
+        updater._run_git = fake_run_git
+        result = await updater.check_for_updates()
+        assert result is False
+
+    # --- apply_update tests ---
+
+    @pytest.mark.asyncio
     async def test_apply_update_no_pending(self):
         """apply_update returns message when no update pending."""
         updater = self._make_updater()
@@ -156,17 +171,17 @@ class TestAutoUpdater:
         updater._run_git = fake_run_git
 
         with patch("sidechannel.updater.subprocess.run") as mock_run, \
-             patch("sidechannel.updater.asyncio.get_event_loop") as mock_loop:
+             patch("sidechannel.updater.asyncio.create_task") as mock_create_task:
             mock_run.return_value = MagicMock(returncode=0, stderr="", stdout="")
-            mock_loop.return_value = MagicMock()
             result = await updater.apply_update()
 
         assert "Update applied" in result
         assert updater.pending_update is False
+        mock_create_task.assert_called()  # _delayed_exit task was created
 
     @pytest.mark.asyncio
-    async def test_apply_update_git_pull_fails(self):
-        """apply_update notifies admin on git pull failure."""
+    async def test_apply_update_git_pull_fails_triggers_rollback(self):
+        """apply_update rolls back and resets state on git pull failure."""
         send = AsyncMock()
         updater = self._make_updater(send_message=send)
         updater.pending_update = True
@@ -181,9 +196,13 @@ class TestAutoUpdater:
             # git pull fails
             raise subprocess.CalledProcessError(1, ["git", "pull"], "", "merge conflict")
         updater._run_git = fake_run_git
+        updater._rollback = AsyncMock()
 
         result = await updater.apply_update()
         assert "failed" in result.lower()
+        updater._rollback.assert_called_once_with("abc1234")
+        assert updater.pending_update is False  # State reset for re-check
+        assert updater.pending_sha is None
         send.assert_called()
 
     @pytest.mark.asyncio
@@ -205,6 +224,38 @@ class TestAutoUpdater:
 
         assert "rolled back" in result.lower()
         updater._rollback.assert_called_once_with("abc1234")
+        assert updater.pending_update is False
+        assert updater.pending_sha is None
+
+    @pytest.mark.asyncio
+    async def test_apply_update_timeout_triggers_rollback(self):
+        """apply_update handles subprocess timeout and rolls back."""
+        send = AsyncMock()
+        updater = self._make_updater(send_message=send)
+        updater.pending_update = True
+        updater.pending_sha = "def5678"
+
+        call_count = 0
+        async def fake_run_git(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return "abc1234"  # rev-parse HEAD
+            if call_count == 2:
+                return ""  # git pull succeeds
+            return ""
+        updater._run_git = fake_run_git
+        updater._rollback = AsyncMock()
+
+        with patch("sidechannel.updater.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired(["pip"], 120)
+            result = await updater.apply_update()
+
+        assert "failed" in result.lower()
+        updater._rollback.assert_called_once_with("abc1234")
+        assert updater.pending_update is False
+
+    # --- lifecycle tests ---
 
     @pytest.mark.asyncio
     async def test_start_stop_lifecycle(self):
@@ -223,3 +274,69 @@ class TestAutoUpdater:
         updater.admin_phone = None
         await updater.start()
         assert updater._check_task is None
+
+    # --- branch validation tests ---
+
+    def test_rejects_branch_starting_with_dash(self):
+        """Branch names starting with - are rejected (git flag injection)."""
+        from sidechannel.updater import AutoUpdater
+        config = MagicMock()
+        config.auto_update_branch = "--upload-pack=evil"
+        config.allowed_numbers = ["+15551234567"]
+        config.auto_update_check_interval = 21600
+        with pytest.raises(ValueError, match="Invalid branch name"):
+            AutoUpdater(config=config, send_message=AsyncMock(),
+                        repo_dir=Path("/fake/repo"))
+
+    def test_accepts_valid_branch_names(self):
+        """Valid branch names like feature/foo and release-1.0 are accepted."""
+        from sidechannel.updater import AutoUpdater
+        for branch in ["main", "develop", "feature/auto-update", "release-1.0",
+                        "v2.0.0", "my_branch"]:
+            config = MagicMock()
+            config.auto_update_branch = branch
+            config.allowed_numbers = ["+15551234567"]
+            config.auto_update_check_interval = 21600
+            updater = AutoUpdater(config=config, send_message=AsyncMock(),
+                                  repo_dir=Path("/fake/repo"))
+            assert updater.branch == branch
+
+    # --- rollback tests ---
+
+    @pytest.mark.asyncio
+    async def test_rollback_failure_does_not_crash(self):
+        """_rollback logs error but does not raise on git reset failure."""
+        updater = self._make_updater()
+        async def failing_git(*args, **kwargs):
+            raise subprocess.CalledProcessError(1, ["git", "reset"], "", "error")
+        updater._run_git = failing_git
+        # Should not raise
+        await updater._rollback("abc1234")
+
+    # --- check loop error handling ---
+
+    @pytest.mark.asyncio
+    async def test_check_loop_continues_after_error(self):
+        """_check_loop should continue running after check_for_updates raises."""
+        updater = self._make_updater()
+        updater.check_interval = 0.01  # Fast for testing
+        call_count = 0
+
+        original_check = updater.check_for_updates
+        async def counting_check():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("network error")
+            # Second call succeeds, then we cancel
+            if call_count >= 2:
+                updater._check_task.cancel()
+            return False
+        updater.check_for_updates = counting_check
+
+        await updater.start()
+        try:
+            await updater._check_task
+        except asyncio.CancelledError:
+            pass
+        assert call_count >= 2  # Loop survived the first error

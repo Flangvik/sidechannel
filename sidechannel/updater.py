@@ -1,6 +1,7 @@
 """Auto-update module for sidechannel."""
 
 import asyncio
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -12,6 +13,9 @@ logger = structlog.get_logger()
 
 # Exit code to signal intentional restart for update
 EXIT_CODE_UPDATE = 75
+
+# Valid git branch name pattern (reject names starting with - to prevent flag injection)
+_BRANCH_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._/-]*$')
 
 
 class AutoUpdater:
@@ -25,6 +29,11 @@ class AutoUpdater:
         self.branch = config.auto_update_branch
         self.check_interval = config.auto_update_check_interval
         self.admin_phone = config.allowed_numbers[0] if config.allowed_numbers else None
+        self._lock = asyncio.Lock()
+
+        # Validate branch name to prevent git flag injection
+        if not _BRANCH_RE.match(self.branch):
+            raise ValueError(f"Invalid branch name: {self.branch!r}")
 
         # Update state
         self.pending_update = False
@@ -45,99 +54,133 @@ class AutoUpdater:
 
     async def check_for_updates(self) -> bool:
         """Check if remote has new commits. Returns True if update available."""
-        try:
-            await self._run_git("fetch", "origin", self.branch)
-            local_head = await self._run_git("rev-parse", "HEAD")
-            remote_head = await self._run_git("rev-parse", f"origin/{self.branch}")
+        async with self._lock:
+            try:
+                await self._run_git("fetch", "origin", self.branch)
+                local_head = await self._run_git("rev-parse", "HEAD")
+                remote_head = await self._run_git("rev-parse", f"origin/{self.branch}")
 
-            if local_head == remote_head:
-                self.pending_update = False
-                self.pending_sha = None
-                return False
+                if local_head == remote_head:
+                    self.pending_update = False
+                    self.pending_sha = None
+                    return False
 
-            # Update available
-            if self.pending_update and self.pending_sha == remote_head:
+                # Update available
+                if self.pending_update and self.pending_sha == remote_head:
+                    return True
+
+                # New update - get details and notify
+                commit_count = await self._run_git(
+                    "rev-list", "--count", f"HEAD..origin/{self.branch}"
+                )
+                latest_msg = await self._run_git(
+                    "log", "--format=%s", "-1", f"origin/{self.branch}"
+                )
+
+                self.pending_update = True
+                self.pending_sha = remote_head
+
+                if self.admin_phone:
+                    msg = (
+                        f"Update available: {commit_count} new commit(s) on {self.branch} "
+                        f"({local_head[:7]} \u2192 {remote_head[:7]}). "
+                        f"Latest: '{latest_msg}'. Reply /update to apply."
+                    )
+                    await self.send_message(self.admin_phone, msg)
+
+                logger.info("update_available", commits=commit_count,
+                            local=local_head[:7], remote=remote_head[:7])
                 return True
 
-            # New update - get details and notify
-            commit_count = await self._run_git(
-                "rev-list", "--count", f"HEAD..origin/{self.branch}"
-            )
-            latest_msg = await self._run_git(
-                "log", "--format=%s", "-1", f"origin/{self.branch}"
-            )
-
-            self.pending_update = True
-            self.pending_sha = remote_head
-
-            if self.admin_phone:
-                msg = (
-                    f"Update available: {commit_count} new commit(s) on {self.branch} "
-                    f"({local_head[:7]} \u2192 {remote_head[:7]}). "
-                    f"Latest: '{latest_msg}'. Reply /update to apply."
-                )
-                await self.send_message(self.admin_phone, msg)
-
-            logger.info("update_available", commits=commit_count,
-                        local=local_head[:7], remote=remote_head[:7])
-            return True
-
-        except Exception as e:
-            logger.error("update_check_failed", error=str(e))
-            return False
+            except Exception as e:
+                logger.error("update_check_failed", error=str(e))
+                return False
 
     async def apply_update(self) -> str:
         """Pull updates, install deps, and trigger restart. Returns status message."""
-        if not self.pending_update:
-            return "No updates available."
+        async with self._lock:
+            if not self.pending_update:
+                return "No updates available."
 
-        previous_head = None
-        try:
-            previous_head = await self._run_git("rev-parse", "HEAD")
+            # Stop the check loop during update to avoid interference
+            if self._check_task and not self._check_task.done():
+                self._check_task.cancel()
+                try:
+                    await self._check_task
+                except asyncio.CancelledError:
+                    pass
 
-            # Pull with fast-forward only
-            await self._run_git("pull", "--ff-only", "origin", self.branch)
+            previous_head = None
+            try:
+                previous_head = await self._run_git("rev-parse", "HEAD")
 
-            # Install dependencies
-            pip_cmd = [sys.executable, "-m", "pip", "install", "-e",
-                       str(self.repo_dir), "--quiet"]
-            pip_result = await asyncio.to_thread(
-                subprocess.run, pip_cmd, capture_output=True, text=True, timeout=120
-            )
-            if pip_result.returncode != 0:
-                raise RuntimeError(f"pip install failed: {pip_result.stderr}")
+                # Pull with fast-forward only
+                await self._run_git("pull", "--ff-only", "origin", self.branch)
 
-            self.pending_update = False
-            self.pending_sha = None
+                # Install dependencies
+                pip_cmd = [sys.executable, "-m", "pip", "install", "-e",
+                           str(self.repo_dir), "--quiet"]
+                pip_result = await asyncio.to_thread(
+                    subprocess.run, pip_cmd, capture_output=True, text=True, timeout=120
+                )
+                if pip_result.returncode != 0:
+                    raise RuntimeError(f"pip install failed: {pip_result.stderr}")
 
-            logger.info("update_applied", previous=previous_head[:7])
+                self.pending_update = False
+                self.pending_sha = None
 
-            if self.admin_phone:
-                await self.send_message(self.admin_phone,
-                                        "Update applied successfully. Restarting...")
+                logger.info("update_applied", previous=previous_head[:7])
 
-            # Schedule exit after giving the message time to send
-            asyncio.get_event_loop().call_later(2, sys.exit, EXIT_CODE_UPDATE)
-            return "Update applied. Restarting..."
+                if self.admin_phone:
+                    await self.send_message(self.admin_phone,
+                                            "Update applied successfully. Restarting...")
 
-        except subprocess.CalledProcessError as e:
-            error_msg = f"Update failed (git): {e.stderr or e.stdout or str(e)}"
-            logger.error("update_pull_failed", error=error_msg)
-            if self.admin_phone:
-                await self.send_message(self.admin_phone,
-                                        f"Update failed: {error_msg}")
-            return error_msg
+                # Schedule exit via a proper async task (not call_later which
+                # can swallow SystemExit inside the event loop callback machinery)
+                async def _delayed_exit():
+                    await asyncio.sleep(2)
+                    raise SystemExit(EXIT_CODE_UPDATE)
 
-        except RuntimeError as e:
-            # pip install failed - rollback
-            logger.error("update_install_failed", error=str(e))
-            if previous_head:
-                await self._rollback(previous_head)
-            error_msg = str(e)
-            if self.admin_phone:
-                await self.send_message(self.admin_phone,
-                                        f"Update failed and rolled back: {error_msg}")
-            return f"Update failed and rolled back: {error_msg}"
+                asyncio.create_task(_delayed_exit())
+                return "Update applied. Restarting..."
+
+            except subprocess.CalledProcessError as e:
+                error_msg = f"Update failed (git): {e.stderr or e.stdout or str(e)}"
+                logger.error("update_pull_failed", error=error_msg)
+                if previous_head:
+                    await self._rollback(previous_head)
+                self.pending_update = False
+                self.pending_sha = None
+                if self.admin_phone:
+                    await self.send_message(self.admin_phone,
+                                            f"Update failed and rolled back: {error_msg}")
+                return error_msg
+
+            except RuntimeError as e:
+                # pip install failed - rollback
+                logger.error("update_install_failed", error=str(e))
+                if previous_head:
+                    await self._rollback(previous_head)
+                self.pending_update = False
+                self.pending_sha = None
+                error_msg = str(e)
+                if self.admin_phone:
+                    await self.send_message(self.admin_phone,
+                                            f"Update failed and rolled back: {error_msg}")
+                return f"Update failed and rolled back: {error_msg}"
+
+            except (subprocess.TimeoutExpired, Exception) as e:
+                error_msg = f"Update failed unexpectedly: {e}"
+                logger.error("update_unexpected_failure", error=str(e),
+                             exc_type=type(e).__name__)
+                if previous_head:
+                    await self._rollback(previous_head)
+                self.pending_update = False
+                self.pending_sha = None
+                if self.admin_phone:
+                    await self.send_message(self.admin_phone,
+                                            f"Update failed and rolled back: {error_msg}")
+                return error_msg
 
     async def _rollback(self, previous_head: str):
         """Rollback to a previous commit."""
