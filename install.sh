@@ -254,6 +254,7 @@ if [ "$RESTART" = true ]; then
 fi
 
 # Banner
+VERSION="1.4.0"
 echo -e "${CYAN}"
 cat << 'EOF'
      _     _           _                            _
@@ -264,7 +265,8 @@ cat << 'EOF'
 
 EOF
 echo -e "${NC}"
-echo -e "${GREEN}Signal + Claude AI Bot Installer${NC}"
+echo -e "  ${GREEN}Signal + Claude AI Bot${NC} — v${VERSION}"
+echo -e "  By ${CYAN}hackingdave${NC} — ${CYAN}https://github.com/hackingdave/sidechannel${NC}"
 echo ""
 
 # -----------------------------------------------------------------------------
