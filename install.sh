@@ -688,8 +688,9 @@ if [ "$SKIP_SIGNAL" = false ]; then
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         REMOTE_MODE=true
         SIGNAL_BIND="0.0.0.0"
-        echo -e "  Signal bridge will be temporarily exposed on all interfaces."
-        echo -e "  It will be locked to localhost after pairing."
+        echo -e "  Signal bridge will be ${YELLOW}temporarily${NC} exposed on all interfaces for QR scanning."
+        echo -e "  After pairing completes, it will be ${GREEN}automatically locked to localhost${NC}"
+        echo -e "  and will no longer be accessible remotely. This is for security."
         echo ""
     fi
 
