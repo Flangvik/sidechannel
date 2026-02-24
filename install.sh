@@ -25,35 +25,38 @@ sed_inplace() {
 # Wait for Signal bridge QR code endpoint to be ready.
 # signal-cli inside the container needs time to fully initialize —
 # /v1/about returns OK first, but qrcodelink may not work yet.
-# Returns 0 on success (LINK_URI is set), 1 on failure.
+# The endpoint returns a PNG image on success, JSON error on failure.
+# Returns 0 on success, 1 on failure. Sets QR_READY=true on success.
 wait_for_qrcode() {
     local max_wait=${1:-90}
     local elapsed=0
-    LINK_URI=""
+    local qr_url="http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel"
+    QR_READY=false
 
-    echo -e "  Waiting for Signal bridge to initialize..."
+    echo -ne "  Waiting for Signal bridge to initialize"
 
     while [ $elapsed -lt $max_wait ]; do
-        # Try to get the link URI from the QR code endpoint
-        local response
-        response=$(curl -sf "http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel" 2>/dev/null || true)
-
-        # Check if we got an actual sgnl:// URI (not an error response)
-        local uri
-        uri=$(echo "$response" | grep -o 'sgnl://[^"]*' 2>/dev/null || true)
-        if [ -n "$uri" ]; then
-            LINK_URI="$uri"
-            return 0
+        # First check if container is even running
+        if ! docker ps | grep -q signal-api; then
+            echo ""
+            return 1
         fi
 
-        # Also check if the response is a PNG image (QR code) — means endpoint works
-        # even if we can't extract the URI from binary data
-        local content_type
-        content_type=$(curl -sI "http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel" 2>/dev/null | grep -i "content-type" || true)
-        if echo "$content_type" | grep -qi "image/png"; then
-            # Endpoint works, QR code is available via browser even if we can't parse URI
-            LINK_URI=""
-            return 0
+        # Check the QR endpoint — success returns image/png, failure returns JSON error
+        local http_code
+        http_code=$(curl -s -o /dev/null -w "%{http_code}" "$qr_url" 2>/dev/null || echo "000")
+
+        if [ "$http_code" = "200" ]; then
+            # 200 could be success (PNG) or error (JSON) — check content type
+            local content_type
+            content_type=$(curl -sI "$qr_url" 2>/dev/null | grep -i "^content-type" || true)
+
+            if echo "$content_type" | grep -qi "image"; then
+                QR_READY=true
+                echo ""
+                return 0
+            fi
+            # JSON error response (like "no data to encode") — keep waiting
         fi
 
         sleep 3
@@ -567,23 +570,19 @@ EOF
             echo ""
             echo -e "  ${GREEN}Link your phone to sidechannel:${NC}"
             echo ""
-            echo "    1. Open Signal on your phone"
-            echo "    2. Settings > Linked Devices > Link New Device"
-            echo "    3. Scan this QR code:"
+            echo "    1. Open this URL in your browser to see the QR code:"
             echo ""
-
-            if command -v qrencode &> /dev/null && [ -n "$LINK_URI" ]; then
-                echo "$LINK_URI" | qrencode -t ANSIUTF8
-                echo ""
-            fi
-
             if [ "$DOCKER_REMOTE_MODE" = true ]; then
                 SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
                 [ -z "$SERVER_IP" ] && SERVER_IP=$(ipconfig getifaddr en0 2>/dev/null || echo "<your-server-ip>")
-                echo -e "    Open in browser: ${CYAN}http://${SERVER_IP}:8080/v1/qrcodelink?device_name=sidechannel${NC}"
+                echo -e "       ${CYAN}http://${SERVER_IP}:8080/v1/qrcodelink?device_name=sidechannel${NC}"
             else
-                echo -e "    Or open in browser: ${CYAN}http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel${NC}"
+                echo -e "       ${CYAN}http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel${NC}"
             fi
+            echo ""
+            echo "    2. Open Signal on your phone"
+            echo "    3. Settings > Linked Devices > Link New Device"
+            echo "    4. Scan the QR code from your browser"
             echo ""
 
             flush_stdin
@@ -1002,23 +1001,6 @@ if [ "$SKIP_SIGNAL" = false ]; then
     echo -e "${BLUE}Signal Pairing${NC}"
     echo ""
 
-    # Install qrencode if missing (for terminal QR code display)
-    if ! command -v qrencode &> /dev/null; then
-        if [ "$(uname)" = "Darwin" ] && command -v brew &> /dev/null; then
-            echo -e "  Installing qrencode..."
-            brew install qrencode -q 2>/dev/null || true
-        elif command -v apt-get &> /dev/null; then
-            echo -e "  Installing qrencode..."
-            sudo apt-get install -y -qq qrencode 2>/dev/null || true
-        elif command -v dnf &> /dev/null; then
-            echo -e "  Installing qrencode..."
-            sudo dnf install -y -q qrencode 2>/dev/null || true
-        fi
-        if command -v qrencode &> /dev/null; then
-            echo -e "  ${GREEN}✓${NC} qrencode installed"
-        fi
-    fi
-
     # Start Signal bridge container
     mkdir -p "$SIGNAL_DATA_DIR"
 
@@ -1066,29 +1048,19 @@ if [ "$SKIP_SIGNAL" = false ]; then
             # --- Device linking ---
             echo -e "  ${GREEN}Link your phone to sidechannel:${NC}"
             echo ""
-            echo "    1. Open Signal on your phone"
-            echo "    2. Settings > Linked Devices > Link New Device"
-            echo "    3. Scan this QR code:"
+            echo "    1. Open this URL in your browser to see the QR code:"
             echo ""
-
-            if command -v qrencode &> /dev/null && [ -n "$LINK_URI" ]; then
-                echo "$LINK_URI" | qrencode -t ANSIUTF8
-                echo ""
-            fi
-
             if [ "$REMOTE_MODE" = true ]; then
                 SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
                 [ -z "$SERVER_IP" ] && SERVER_IP=$(ipconfig getifaddr en0 2>/dev/null || echo "<your-server-ip>")
-                echo -e "    Open in browser: ${CYAN}http://${SERVER_IP}:8080/v1/qrcodelink?device_name=sidechannel${NC}"
+                echo -e "       ${CYAN}http://${SERVER_IP}:8080/v1/qrcodelink?device_name=sidechannel${NC}"
             else
-                echo -e "    Or open in browser: ${CYAN}http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel${NC}"
+                echo -e "       ${CYAN}http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel${NC}"
             fi
-
-            if ! command -v qrencode &> /dev/null && [ -z "$LINK_URI" ]; then
-                echo ""
-                echo -e "    ${YELLOW}Tip:${NC} Use the browser link above to scan the QR code"
-            fi
-
+            echo ""
+            echo "    2. Open Signal on your phone"
+            echo "    3. Settings > Linked Devices > Link New Device"
+            echo "    4. Scan the QR code from your browser"
             echo ""
             flush_stdin
             read -p "  Press Enter after scanning the QR code..."
