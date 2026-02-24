@@ -772,11 +772,9 @@ fi
 # -----------------------------------------------------------------------------
 # Systemd service
 # -----------------------------------------------------------------------------
+INSTALLED_SERVICE=false
 if [ "$SKIP_SYSTEMD" = false ] && [ "$(uname)" = "Linux" ] && command -v systemctl &> /dev/null; then
     echo ""
-    echo -e "${BLUE}Systemd Service${NC}"
-    echo ""
-
     read -p "Install as a systemd service (auto-start on boot)? [Y/n] " -n 1 -r
     echo ""
 
@@ -803,15 +801,11 @@ WantedBy=default.target
 EOF
 
         systemctl --user daemon-reload
+        systemctl --user enable sidechannel
+        loginctl enable-linger "$USER" 2>/dev/null || true
 
-        echo -e "  ${GREEN}✓${NC} Service installed"
-        echo ""
-        echo "To start sidechannel:"
-        echo "  systemctl --user start sidechannel"
-        echo ""
-        echo "To enable on boot:"
-        echo "  systemctl --user enable sidechannel"
-        echo "  loginctl enable-linger $USER"
+        INSTALLED_SERVICE=true
+        echo -e "  ${GREEN}✓${NC} Service installed and enabled"
     fi
 fi
 
@@ -844,21 +838,51 @@ echo -e "  Config:      ${CYAN}$CONFIG_DIR/settings.yaml${NC}"
 echo ""
 echo -e "${YELLOW}Next steps:${NC}"
 echo ""
+
+STEP=1
+
+# Claude CLI
 if ! command -v claude &> /dev/null && ! [ -f "$HOME/.local/bin/claude" ]; then
-    echo "  1. Install Claude CLI: https://docs.anthropic.com/en/docs/claude-code"
-    echo "  2. Authenticate:       claude login"
+    echo "  $STEP. Install Claude CLI: https://docs.anthropic.com/en/docs/claude-code"
+    STEP=$((STEP + 1))
+    echo "  $STEP. Authenticate: claude login"
+    STEP=$((STEP + 1))
 else
-    echo "  1. Authenticate Claude (if not already): claude login"
+    echo "  $STEP. Authenticate Claude (if not already): claude login"
+    STEP=$((STEP + 1))
 fi
+
+# Signal pairing
+if [ "$SKIP_SIGNAL" = true ]; then
+    echo ""
+    echo "  $STEP. Set up Signal (skipped during install):"
+    STEP=$((STEP + 1))
+    echo "     a. Make sure Docker is installed and running"
+    echo "     b. Re-run: ./install.sh --local"
+    echo "     Or manually:"
+    echo "       docker run -d --name signal-api --restart unless-stopped \\"
+    echo "         -p 127.0.0.1:8080:8080 \\"
+    echo "         -v $SIGNAL_DATA_DIR:/home/.local/share/signal-cli \\"
+    echo "         -e MODE=native bbernhard/signal-cli-rest-api:0.80"
+    echo "       Then pair: http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel"
+fi
+
+# How to start
 echo ""
-echo "  Start sidechannel:"
-echo "    $RUN_SCRIPT"
+if [ "$INSTALLED_SERVICE" = true ]; then
+    echo "  $STEP. Start sidechannel:"
+    STEP=$((STEP + 1))
+    echo "     systemctl --user start sidechannel"
+    echo ""
+    echo "     View logs: journalctl --user -u sidechannel -f"
+else
+    echo "  $STEP. Start sidechannel:"
+    STEP=$((STEP + 1))
+    echo "     $RUN_SCRIPT"
+fi
+
 echo ""
-echo "  Or if you installed the systemd service:"
-echo "    systemctl --user start sidechannel"
-echo ""
-echo "  Send a message to your Signal number to test:"
-echo "    /help"
+echo "  $STEP. Send a message to your Signal number to test: /help"
 echo ""
 echo -e "${CYAN}Documentation: https://github.com/hackingdave/sidechannel${NC}"
 echo ""
