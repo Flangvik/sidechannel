@@ -108,7 +108,7 @@ class SignalBot:
 
         # Initialize autonomous system (uses same DB connection)
         async def autonomous_notify(phone: str, message: str):
-            await self._send_message(phone, f"[Auto] {message}")
+            await self._send_message(phone, message)
 
         self.autonomous_manager = AutonomousManager(
             db_connection=self.memory.db._conn,
@@ -175,7 +175,7 @@ class SignalBot:
             return
 
         # Add sidechannel identifier to all messages
-        message = f"sidechannel: {message}"
+        message = f"[sidechannel] {message}"
 
         try:
             url = f"{self.config.signal_api_url}/v2/send"
@@ -220,33 +220,32 @@ class SignalBot:
                 elapsed = ""
                 if self._current_task_start:
                     mins = int((datetime.now() - self._current_task_start).total_seconds() / 60)
-                    elapsed = f" ({mins} min elapsed)"
-                task_info = f"\n\nRunning task{elapsed}:\n{self._current_task_description[:150] if self._current_task_description else 'unknown'}..."
-                # Show current step if available
+                    elapsed = f" ({mins}m)"
+                desc = self._current_task_description[:120] if self._current_task_description else "unknown"
+                status += f"\n\nActive Task{elapsed}: {desc}"
                 if self._current_task_step:
-                    task_info += f"\n\nCurrent step: {self._current_task_step}"
-                status += task_info
+                    status += f"\nStep: {self._current_task_step}"
 
             # Add autonomous loop status
             try:
                 loop_status = await self.autonomous_manager.get_loop_status()
                 if loop_status.is_running:
-                    auto_info = "\n\n[Autonomous Loop]"
+                    auto_info = "\n\nAutonomous Loop: Running"
                     if loop_status.current_task_id:
-                        # Get current task details
                         current_task = await self.autonomous_manager.db.get_task(loop_status.current_task_id)
                         if current_task:
-                            auto_info += f"\nRunning: {current_task.title[:50]}"
+                            elapsed_auto = ""
                             if current_task.started_at:
                                 mins = int((datetime.now() - current_task.started_at).total_seconds() / 60)
-                                auto_info += f" ({mins} min)"
-                    auto_info += f"\nQueued: {loop_status.tasks_queued} tasks"
-                    auto_info += f"\nCompleted today: {loop_status.tasks_completed_today}"
+                                elapsed_auto = f" ({mins}m)"
+                            auto_info += f"\nCurrent: {current_task.title[:50]}{elapsed_auto}"
+                    auto_info += f"\nQueued: {loop_status.tasks_queued}"
+                    auto_info += f" | Done: {loop_status.tasks_completed_today}"
                     if loop_status.tasks_failed_today > 0:
                         auto_info += f" | Failed: {loop_status.tasks_failed_today}"
                     status += auto_info
                 elif loop_status.is_paused:
-                    status += "\n\n[Autonomous Loop] PAUSED"
+                    status += "\n\nAutonomous Loop: Paused"
             except Exception as e:
                 logger.warning("status_autonomous_error", error=str(e))
 
@@ -278,18 +277,9 @@ class SignalBot:
                 return "Usage: /ask <question about the project>"
             if not self.project_manager.current_project:
                 return "No project selected. Use /select <project> first."
-
-            # Check if a task is already running
-            if self._current_task and not self._current_task.done():
-                elapsed = ""
-                if self._current_task_start:
-                    mins = int((datetime.now() - self._current_task_start).total_seconds() / 60)
-                    elapsed = f" ({mins} min elapsed)"
-                return (
-                    f"A task is already running{elapsed}.\n"
-                    f"Current: {self._current_task_description[:100] if self._current_task_description else 'unknown'}...\n"
-                    f"Use /cancel to stop it first."
-                )
+            busy = self._check_task_busy()
+            if busy:
+                return busy
 
             await self._send_message(sender, "Analyzing project...")
             self._start_background_task(
@@ -304,46 +294,24 @@ class SignalBot:
                 return "Usage: /do <task to perform>"
             if not self.project_manager.current_project:
                 return "No project selected. Use /select <project> first."
+            busy = self._check_task_busy()
+            if busy:
+                return busy
 
-            # Check if a task is already running
-            if self._current_task and not self._current_task.done():
-                elapsed = ""
-                if self._current_task_start:
-                    mins = int((datetime.now() - self._current_task_start).total_seconds() / 60)
-                    elapsed = f" ({mins} min elapsed)"
-                return (
-                    f"A task is already running{elapsed}.\n"
-                    f"Current: {self._current_task_description[:100] if self._current_task_description else 'unknown'}...\n"
-                    f"Use /cancel to stop it first."
-                )
-
-            # Simple task - start in background (non-blocking)
             await self._send_message(sender, "Working on it...")
             self._start_background_task(sender, args, self.project_manager.current_project)
             return None  # Response will be sent when task completes
 
         elif command == "complex":
             if not args:
-                return "Usage: /complex <task to perform>\n\nBreaks task into PRD with stories and autonomous tasks."
+                return "Usage: /complex <task>\nBreaks task into PRD with stories and autonomous tasks."
             if not self.project_manager.current_project:
                 return "No project selected. Use /select <project> first."
+            busy = self._check_task_busy()
+            if busy:
+                return busy
 
-            # Check if a task is already running
-            if self._current_task and not self._current_task.done():
-                elapsed = ""
-                if self._current_task_start:
-                    mins = int((datetime.now() - self._current_task_start).total_seconds() / 60)
-                    elapsed = f" ({mins} min elapsed)"
-                return (
-                    f"A task is already running{elapsed}.\n"
-                    f"Current: {self._current_task_description[:100] if self._current_task_description else 'unknown'}...\n"
-                    f"Use /cancel to stop it first."
-                )
-
-            await self._send_message(
-                sender,
-                "Creating PRD and breaking into autonomous tasks..."
-            )
+            await self._send_message(sender, "Creating PRD and breaking into autonomous tasks...")
             # Run PRD creation in background (non-blocking)
             self._start_prd_creation_task(sender, args)
             return None  # Response sent when PRD creation completes
@@ -354,18 +322,9 @@ class SignalBot:
         elif command == "summary":
             if not self.project_manager.current_project:
                 return "No project selected. Use /select <project> first."
-
-            # Check if a task is already running
-            if self._current_task and not self._current_task.done():
-                elapsed = ""
-                if self._current_task_start:
-                    mins = int((datetime.now() - self._current_task_start).total_seconds() / 60)
-                    elapsed = f" ({mins} min elapsed)"
-                return (
-                    f"A task is already running{elapsed}.\n"
-                    f"Current: {self._current_task_description[:100] if self._current_task_description else 'unknown'}...\n"
-                    f"Use /cancel to stop it first."
-                )
+            busy = self._check_task_busy()
+            if busy:
+                return busy
 
             await self._send_message(sender, "Generating summary...")
             self._start_background_task(
@@ -441,36 +400,42 @@ class SignalBot:
         """Get help text."""
         help_text = """sidechannel Commands:
 
-Project Commands (Claude):
+Project Management:
   /projects - List available projects
-  /select <project> - Select existing project
-  /ask <question> - Ask Claude about the project
-  /do <task> - Have Claude make changes
+  /select <project> - Select a project
+  /add <name> [path] [desc] - Add existing project
+  /new <name> [desc] - Create new project
+  /status - Show current project and task status
+  /summary - Generate project summary
+
+Claude Tasks:
+  /ask <question> - Ask about the current project
+  /do <task> - Execute a task with Claude
   /complex <task> - Break into PRD with autonomous tasks
-  /cancel - Stop the currently running task
+  /cancel - Stop the running task
 
-Autonomous Tasks:
-  /prd <title> - Create PRD (Product Requirements Doc)
-  /story <prd_id> <title> | <desc> - Add user story
-  /task <story_id> <title> | <desc> - Add task
+Autonomous System:
+  /prd <title> - Create a Product Requirements Doc
+  /story <prd_id> <title> | <desc> - Add a user story
+  /task <story_id> <title> | <desc> - Add a task
   /tasks [status] - List tasks
-  /queue story|prd <id> - Queue tasks
-  /autonomous status|start|pause|stop - Control loop
-  /learnings [search] - View/search learnings
+  /queue story|prd <id> - Queue tasks for execution
+  /autonomous status|start|pause|stop - Control the loop
+  /learnings [search] - View or search learnings
 
-Memory Commands (uses current project):
+Memory:
   /remember <text> - Store a memory
-  /recall <query> - Search conversations
+  /recall <query> - Search past conversations
   /memories - List stored memories
   /history [count] - View recent messages
-  /global <cmd> - Cross-project (remember/recall/etc)
-
-/help - Show this help"""
+  /forget all|preferences|today - Delete data
+  /preferences - View stored preferences
+  /global <cmd> - Cross-project memory commands"""
 
         if self.sidechannel_runner:
             help_text = """sidechannel Commands:
 
-sidechannel (AI Assistant):
+AI Assistant:
   sidechannel: <question> - Ask anything
 
 """ + help_text[len("sidechannel Commands:\n\n"):]
@@ -569,11 +534,10 @@ sidechannel (AI Assistant):
         if not args.strip():
             return (
                 "Usage: /global <command> <args>\n\n"
-                "Commands:\n"
-                "  /global remember <text> - Store a global memory\n"
-                "  /global recall <query> - Search all projects\n"
-                "  /global memories - List all memories\n"
-                "  /global history [count] - History across all projects"
+                "  remember <text> - Store a global memory\n"
+                "  recall <query> - Search all projects\n"
+                "  memories - List all memories\n"
+                "  history [count] - History across projects"
             )
 
         parts = args.strip().split(maxsplit=1)
@@ -591,6 +555,17 @@ sidechannel (AI Assistant):
         else:
             return f"Unknown global command: {subcommand}\n\nUse /global for help."
 
+    def _check_task_busy(self) -> Optional[str]:
+        """Return a busy message if a task is running, else None."""
+        if not self._current_task or self._current_task.done():
+            return None
+        elapsed = ""
+        if self._current_task_start:
+            mins = int((datetime.now() - self._current_task_start).total_seconds() / 60)
+            elapsed = f" ({mins}m)"
+        desc = self._current_task_description[:100] if self._current_task_description else "unknown"
+        return f"Task in progress{elapsed}: {desc}\nUse /cancel to stop it."
+
     async def _cancel_current_task(self) -> str:
         """Cancel the currently running task."""
         if not self._current_task or self._current_task.done():
@@ -600,7 +575,7 @@ sidechannel (AI Assistant):
         elapsed = ""
         if self._current_task_start:
             mins = int((datetime.now() - self._current_task_start).total_seconds() / 60)
-            elapsed = f" after {mins} min"
+            elapsed = f" after {mins}m"
 
         self._current_task.cancel()
 
@@ -608,7 +583,7 @@ sidechannel (AI Assistant):
         await self.runner.cancel()
 
         logger.info("task_cancelled_by_user", task=task_desc[:50])
-        return f"Cancelled: {task_desc[:100]}...{elapsed}"
+        return f"Cancelled{elapsed}: {task_desc[:100]}"
 
     def _start_prd_creation_task(self, sender: str, task_description: str):
         """Start PRD creation in the background (non-blocking)."""
@@ -649,9 +624,9 @@ sidechannel (AI Assistant):
         async def update_step(step: str, notify: bool = True):
             self._current_task_step = step
             if notify:
-                await self._send_message(sender, f"[Step] {step}")
+                await self._send_message(sender, step)
 
-        await update_step("Step 1/5: Analyzing task complexity...")
+        await update_step("Analyzing task complexity...")
 
         # First, use Claude to analyze and break down the task
         breakdown_prompt = f"""Analyze this task request and break it into a structured PRD (Product Requirements Document).
@@ -702,7 +677,7 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
         try:
             # Run Claude to get the breakdown
             self.runner.set_project(project_path)
-            await update_step("Step 2/5: Claude analyzing and breaking down task...")
+            await update_step("Breaking down task...")
             success, response = await self.runner.run_claude(
                 breakdown_prompt,
                 timeout=self.config.claude_timeout  # Use configurable timeout
@@ -712,12 +687,12 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
                 logger.error("prd_analyze_failed", response=response[:200])
                 return "Failed to analyze task."
 
-            await update_step("Step 3/5: Parsing task breakdown...")
+            await update_step("Parsing task breakdown...", notify=False)
 
             # Parse the JSON response with robust error handling
             breakdown = await parse_prd_json(response, self.runner, update_step)
 
-            await update_step("Step 4/5: Creating PRD structure...")
+            await update_step("Creating PRD structure...", notify=False)
 
             # Create the PRD
             prd = await self.autonomous_manager.create_prd(
@@ -733,7 +708,7 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
 
             # Create stories and tasks
             for story_idx, story_data in enumerate(breakdown.get("stories", []), 1):
-                await update_step(f"Step 4/5: Creating story {story_idx}/{total_stories}: {story_data.get('title', 'Untitled')[:30]}...", notify=False)
+                await update_step(f"Creating story {story_idx}/{total_stories}...", notify=False)
                 story = await self.autonomous_manager.create_story(
                     prd_id=prd.id,
                     phone_number=sender,
@@ -756,7 +731,7 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
 
                 story_summaries.append(f"  - {story.title} ({task_count} tasks)")
 
-            await update_step("Step 5/5: Queuing tasks for execution...")
+            await update_step("Queuing tasks for execution...")
 
             # Queue all tasks
             queued = await self.autonomous_manager.queue_prd(prd.id)
@@ -767,23 +742,23 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
                 await self.autonomous_manager.start_loop()
 
             # Return summary
+            loop_state = "Started" if not status.is_running else "Running"
             return (
-                f"Created PRD #{prd.id}: {prd.title}\n\n"
+                f"PRD #{prd.id}: {prd.title}\n\n"
                 f"Stories:\n" + "\n".join(story_summaries) + "\n\n"
-                f"Total: {total_tasks} tasks queued\n"
-                f"Autonomous loop: {'Started' if not status.is_running else 'Already running'}\n\n"
-                f"Monitor with /tasks or /autonomous status"
+                f"{total_tasks} tasks queued | Loop: {loop_state}\n"
+                f"Use /tasks or /autonomous status to monitor."
             )
 
         except (json.JSONDecodeError, ValueError) as e:
             logger.error("prd_json_parse_error", error=str(e), exc_type=type(e).__name__)
-            return "Failed to parse task breakdown."
+            return "Failed to parse the task breakdown. Please try again."
         except KeyError as e:
             logger.error("prd_missing_field", error=str(e))
-            return "PRD response missing a required field."
+            return "Task breakdown was incomplete. Please try again."
         except Exception as e:
             logger.error("prd_creation_error", error=str(e), exc_type=type(e).__name__)
-            return "Failed to create PRD. Check logs for details."
+            return "PRD creation failed. Please try again or check logs."
 
     async def _process_message(self, sender: str, message: str):
         """Process an incoming message."""
@@ -849,26 +824,15 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
             elif response is None:
                 # Treat non-command messages as /do commands if a project is selected
                 if self.project_manager.current_project:
-                    # Check if a task is already running
-                    if self._current_task and not self._current_task.done():
-                        elapsed = ""
-                        if self._current_task_start:
-                            mins = int((datetime.now() - self._current_task_start).total_seconds() / 60)
-                            elapsed = f" ({mins} min elapsed)"
-                        response = (
-                            f"A task is already running{elapsed}.\n"
-                            f"Current: {self._current_task_description[:100] if self._current_task_description else 'unknown'}...\n"
-                            f"Use /cancel to stop it first."
-                        )
+                    busy = self._check_task_busy()
+                    if busy:
+                        response = busy
                     else:
                         await self._send_message(sender, "Working on it...")
                         self._start_background_task(sender, message, self.project_manager.current_project)
                         return  # Response will be sent when task completes
                 else:
-                    response = (
-                        "No project selected. Use /select <project> first, "
-                        "or send a command like /help"
-                    )
+                    response = "No project selected. Use /projects to list or /select <project> to choose one."
 
 
         # If response is None, the task is running in background

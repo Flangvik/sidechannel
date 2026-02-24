@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Help text now shows all commands including /add, /new, /status, /summary, /forget, /preferences
+- Message prefix changed from "sidechannel:" to "[sidechannel]" for cleaner formatting
+- Cleaner status output with compact elapsed time and autonomous loop info
+- Reduced verbose step notifications during PRD creation
+- Consolidated duplicate task-busy checks into `_check_task_busy()` helper
+
 ## [1.2.0] - 2026-02-23
 
 ### Added
