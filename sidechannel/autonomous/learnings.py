@@ -1,7 +1,7 @@
 """Learning extraction from completed tasks."""
 
 import re
-from typing import List
+from typing import List, Optional
 
 import structlog
 
@@ -128,7 +128,7 @@ class LearningExtractor:
 
     def _extract_pitfall_learning(
         self, task: Task, result: TaskExecutionResult
-    ) -> Learning | None:
+    ) -> Optional[Learning]:
         """Extract learning from a task failure."""
         if not result.error_message:
             return None
@@ -200,7 +200,7 @@ class LearningExtractor:
 
     def _extract_quality_gate_learning(
         self, task: Task, result: TaskExecutionResult
-    ) -> Learning | None:
+    ) -> Optional[Learning]:
         """Extract learning from quality gate failure."""
         qg = result.quality_gate
         if not qg or qg.passed:

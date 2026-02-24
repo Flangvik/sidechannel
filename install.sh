@@ -277,8 +277,8 @@ if command -v python3 &> /dev/null; then
     PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
     MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
     MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
-    if [ "$MAJOR" -lt 3 ] || ([ "$MAJOR" -eq 3 ] && [ "$MINOR" -lt 10 ]); then
-        echo -e "${RED}Error: Python 3.10+ required (found $PYTHON_VERSION)${NC}"
+    if [ "$MAJOR" -lt 3 ] || ([ "$MAJOR" -eq 3 ] && [ "$MINOR" -lt 9 ]); then
+        echo -e "${RED}Error: Python 3.9+ required (found $PYTHON_VERSION)${NC}"
         exit 1
     fi
     echo -e "  ${GREEN}✓${NC} Python $PYTHON_VERSION"
@@ -532,9 +532,13 @@ if [ ! -f "$ENV_FILE" ]; then
 EOF
 fi
 
-# Optional AI assistant
+# Optional AI assistant (not required — Claude handles all code tasks)
 echo ""
-read -p "  Enable AI assistant (OpenAI or Grok)? [y/N] " -n 1 -r
+echo -e "  ${BLUE}Optional:${NC} sidechannel can use OpenAI or Grok as a lightweight"
+echo "  assistant for general knowledge questions (\"sidechannel: what is X?\")."
+echo "  This is NOT required — Claude handles all code commands (/ask, /do, /complex)."
+echo ""
+read -p "  Enable optional AI assistant? [y/N] " -n 1 -r
 echo ""
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     sed_inplace "s/enabled: false/enabled: true/" "$SETTINGS_FILE"

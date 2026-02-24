@@ -1,6 +1,6 @@
 # sidechannel
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Claude](https://img.shields.io/badge/Claude-AI-purple.svg)](https://anthropic.com)
 [![Signal](https://img.shields.io/badge/Signal-Messenger-blue.svg)](https://signal.org)
@@ -94,7 +94,7 @@ The installer walks you through everything: Python venv setup, phone number, Sig
 
 | Dependency | Notes |
 |---|---|
-| **Python 3.10+** | Required |
+| **Python 3.9+** | Required |
 | **Docker** | Required for Signal bridge container |
 | **Claude CLI** | Recommended (powers /ask, /do, /complex) |
 | **Signal account** | Required |

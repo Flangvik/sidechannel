@@ -15,8 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `./install.sh --restart` flag to restart the sidechannel service (systemd or launchd)
 
 ### Changed
+- Python requirement lowered from 3.10+ to 3.9+ (compatible with macOS default Python)
 - Installer is now a single code path (Python venv + Signal bridge in Docker)
 - Installer runs from the repo directory instead of copying to `~/sidechannel` — `git pull` updates code immediately
+- Clearer AI assistant prompt explains it's optional and not needed for core functionality
 - `docker-compose.yml` is a signal-bridge-only compose file
 
 ### Fixed

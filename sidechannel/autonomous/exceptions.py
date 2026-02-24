@@ -8,11 +8,13 @@ Exception design principles:
 - Exceptions preserve structured context (task_id, project_path, etc.)
 """
 
+from typing import Optional
+
 
 class AutonomousError(Exception):
     """Base exception for all autonomous system errors."""
 
-    def __init__(self, message: str, *, task_id: int | None = None):
+    def __init__(self, message: str, *, task_id: Optional[int] = None):
         self.task_id = task_id
         super().__init__(message)
 
