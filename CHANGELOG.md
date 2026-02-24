@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatic rollback on failed updates (git reset to previous HEAD)
 - Exit code 75 restart mechanism for systemd/launchd service restart after update
 
+### Security
+- Branch name validation prevents git flag injection via config
+- asyncio.Lock serializes update check and apply to prevent race conditions
+- Rollback on all failure paths (git pull, pip install, timeout)
+
+### Fixed
+- Replace deprecated asyncio.get_event_loop() with asyncio.create_task for Python 3.12+ compatibility
+- Catch subprocess.TimeoutExpired in apply_update to prevent silent failures
+- Reset pending state on update failure so next check cycle re-notifies admin
+
 ## [1.5.3] - 2026-02-24
 
 ### Fixed
