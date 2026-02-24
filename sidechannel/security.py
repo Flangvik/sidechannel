@@ -1,5 +1,7 @@
 """Security module for sidechannel."""
 
+import asyncio
+import functools
 import re
 import time
 import structlog
@@ -120,6 +122,40 @@ def validate_project_path(path: str) -> Optional[Path]:
     except Exception as e:
         logger.error("path_validation_error", path=path, error=str(e))
         return None
+
+
+def require_valid_project_path(func):
+    """Decorator that validates the first 'path' argument via validate_project_path.
+
+    Raises ValueError if path validation fails. Works with both positional
+    and keyword 'path' arguments. Supports sync and async functions.
+    """
+    @functools.wraps(func)
+    def sync_wrapper(*args, **kwargs):
+        path = _extract_path(args, kwargs)
+        if validate_project_path(str(path)) is None:
+            raise ValueError(f"Path validation failed: access denied")
+        return func(*args, **kwargs)
+
+    @functools.wraps(func)
+    async def async_wrapper(*args, **kwargs):
+        path = _extract_path(args, kwargs)
+        if validate_project_path(str(path)) is None:
+            raise ValueError(f"Path validation failed: access denied")
+        return await func(*args, **kwargs)
+
+    if asyncio.iscoroutinefunction(func):
+        return async_wrapper
+    return sync_wrapper
+
+
+def _extract_path(args, kwargs):
+    """Extract the path argument from args/kwargs. First positional arg or 'path' kwarg."""
+    if "path" in kwargs:
+        return kwargs["path"]
+    if args:
+        return args[0]
+    raise ValueError("No path argument found")
 
 
 def sanitize_input(text: str) -> str:
