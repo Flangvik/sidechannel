@@ -638,14 +638,44 @@ if [ "$SKIP_SIGNAL" = false ]; then
 
     # Check Docker is available for the Signal bridge
     if ! command -v docker &> /dev/null; then
-        echo -e "${YELLOW}  Docker is not installed — skipping Signal setup.${NC}"
-        echo -e "  Install Docker later: ${CYAN}https://docs.docker.com/get-docker/${NC}"
+        echo -e "${YELLOW}  Docker is not installed.${NC}"
+        echo -e "  Install Docker: ${CYAN}https://docs.docker.com/get-docker/${NC}"
         echo -e "  Then re-run: ${CYAN}./install.sh --local${NC}"
+        echo ""
+        read -p "  Skip Signal setup for now? [Y/n] " -n 1 -r
+        echo ""
+        if [[ $REPLY =~ ^[Nn]$ ]]; then
+            echo "  Install Docker first, then re-run the installer."
+            exit 0
+        fi
         SKIP_SIGNAL=true
     elif ! docker info &> /dev/null; then
-        echo -e "${YELLOW}  Docker daemon is not running — skipping Signal setup.${NC}"
-        echo -e "  Start Docker, then re-run: ${CYAN}./install.sh --local${NC}"
-        SKIP_SIGNAL=true
+        echo -e "${YELLOW}  Docker is installed but not running.${NC}"
+        echo ""
+        echo "  Start Docker Desktop (or the Docker daemon), then press Enter."
+        echo "  Or press 's' to skip Signal setup for now."
+        echo ""
+        read -p "  > " -n 1 -r
+        echo ""
+
+        if [[ $REPLY =~ ^[Ss]$ ]]; then
+            SKIP_SIGNAL=true
+        else
+            # Wait and retry
+            echo "  Waiting for Docker..."
+            for i in 1 2 3 4 5; do
+                if docker info &> /dev/null; then
+                    echo -e "  ${GREEN}✓${NC} Docker is running"
+                    break
+                fi
+                sleep 2
+            done
+
+            if ! docker info &> /dev/null; then
+                echo -e "${YELLOW}  Docker still not running — skipping Signal setup.${NC}"
+                SKIP_SIGNAL=true
+            fi
+        fi
     fi
 fi
 
