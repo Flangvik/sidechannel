@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Incorrect `projects.yaml` format in README (was dict-based, now matches actual list-based format)
 - Stale references to `~/sidechannel` paths and Python 3.10+ in documentation
 - Claude CLI prompt passed via stdin instead of `-p` flag — fixes crash when memory context starts with dashes
+- Systemd service file: `EnvironmentFile` missing `=` operator (service would fail to load on Linux)
+- Systemd/run.sh: use `python3` instead of `python` (avoids Python 2 on older Linux systems)
+- IP detection fallback: replaced macOS-only `ipconfig getifaddr` with Linux-compatible `ip route`
+- Generated `run.sh` now has `set -e`, guards `.env` source, uses `exec`
+- Added `curl` prerequisite check to installer
 
 ## [1.3.0] - 2026-02-24
 

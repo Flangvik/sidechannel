@@ -305,6 +305,23 @@ else
     fi
 fi
 
+# curl (needed for Signal pairing verification)
+if ! command -v curl &> /dev/null; then
+    echo -e "  ${YELLOW}!${NC} curl not found — installing..."
+    if command -v apt-get &> /dev/null; then
+        sudo apt-get install -y -qq curl > /dev/null 2>&1
+    elif command -v dnf &> /dev/null; then
+        sudo dnf install -y -q curl > /dev/null 2>&1
+    fi
+    if command -v curl &> /dev/null; then
+        echo -e "  ${GREEN}✓${NC} curl installed"
+    else
+        echo -e "  ${YELLOW}!${NC} curl not found — Signal pairing verification may fail"
+    fi
+else
+    echo -e "  ${GREEN}✓${NC} curl"
+fi
+
 # Docker (required for Signal bridge — one small container)
 DOCKER_OK=false
 if [ "$SKIP_SIGNAL" = true ]; then
@@ -705,7 +722,9 @@ if [ "$SKIP_SIGNAL" = false ]; then
         echo ""
         if [ "$REMOTE_MODE" = true ]; then
             SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-            [ -z "$SERVER_IP" ] && SERVER_IP=$(ipconfig getifaddr en0 2>/dev/null || echo "<your-server-ip>")
+            [ -z "$SERVER_IP" ] && SERVER_IP=$(ipconfig getifaddr en0 2>/dev/null)
+            [ -z "$SERVER_IP" ] && SERVER_IP=$(ip route get 1 2>/dev/null | awk '{print $7; exit}')
+            [ -z "$SERVER_IP" ] && SERVER_IP="<your-server-ip>"
             echo -e "       ${CYAN}http://${SERVER_IP}:8080/v1/qrcodelink?device_name=sidechannel${NC}"
         else
             echo -e "       ${CYAN}http://127.0.0.1:8080/v1/qrcodelink?device_name=sidechannel${NC}"
@@ -784,7 +803,7 @@ if command -v docker &> /dev/null && docker info &> /dev/null; then
     docker run -d \
         --name signal-api \
         --restart unless-stopped \
-        -p 127.0.0.1:8080:8080 \
+        -p "127.0.0.1:8080:8080" \
         -v "$SIGNAL_DATA_DIR:/home/.local/share/signal-cli" \
         -e MODE=json-rpc \
         bbernhard/signal-cli-rest-api:latest
@@ -807,11 +826,11 @@ STARTED_SERVICE=false
 RUN_SCRIPT="$INSTALL_DIR/run.sh"
 cat > "$RUN_SCRIPT" << EOF
 #!/bin/bash
-# Start sidechannel
-cd "$INSTALL_DIR"
+set -e
+cd "$INSTALL_DIR" || exit 1
 source "$VENV_DIR/bin/activate"
-source "$CONFIG_DIR/.env"
-python -m sidechannel
+[ -f "$CONFIG_DIR/.env" ] && source "$CONFIG_DIR/.env"
+exec python3 -m sidechannel
 EOF
 chmod +x "$RUN_SCRIPT"
 
@@ -836,8 +855,8 @@ After=network.target docker.service
 Type=simple
 WorkingDirectory=$INSTALL_DIR
 Environment="PATH=$VENV_DIR/bin:/usr/local/bin:/usr/bin:/bin"
-EnvironmentFile=$CONFIG_DIR/.env
-ExecStart=$VENV_DIR/bin/python -m sidechannel
+EnvironmentFile=-$CONFIG_DIR/.env
+ExecStart=$VENV_DIR/bin/python3 -m sidechannel
 Restart=on-failure
 RestartSec=10
 
