@@ -5,11 +5,14 @@ All notable changes to sidechannel will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.5.4] - 2026-02-24
+## [1.6.0] - 2026-02-24
 
 ### Added
-- Auto-update configuration properties (`auto_update.enabled`, `auto_update.check_interval`, `auto_update.branch`)
-- `AutoUpdater` core module (`sidechannel/updater.py`) with git-based update detection, admin notification, safe apply with rollback, and background check loop
+- Auto-update feature: opt-in periodic update checking with admin approval via Signal
+- `/update` command for admin to apply pending updates
+- `auto_update` configuration section in settings.yaml (enabled, check_interval, branch)
+- Automatic rollback on failed updates (git reset to previous HEAD)
+- Exit code 75 restart mechanism for systemd/launchd service restart after update
 
 ## [1.5.3] - 2026-02-24
 

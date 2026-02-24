@@ -323,6 +323,19 @@ sidechannel what's the best way to handle JWT refresh tokens?
 
 The provider is auto-detected from your API keys. If only `OPENAI_API_KEY` is set, it uses OpenAI. If only `GROK_API_KEY` is set, it uses Grok. You can also set it explicitly in config.
 
+### Auto-Update
+
+Sidechannel can check for updates automatically and notify you via Signal. Disabled by default.
+
+```yaml
+auto_update:
+  enabled: true
+  check_interval: 21600    # 6 hours (in seconds)
+  branch: "main"
+```
+
+When an update is detected, the bot sends a Signal message to the admin (first number in `allowed_numbers`). Reply `/update` to apply. On failure, the bot rolls back to the previous version and notifies you.
+
 ---
 
 ## Configuration
