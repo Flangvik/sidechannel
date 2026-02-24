@@ -689,11 +689,16 @@ if [ "$SKIP_SIGNAL" = false ]; then
         echo "  The install will continue — you can pair later."
     fi
 
-    # Restart signal-api in json-rpc mode on localhost.
-    # Pairing uses native mode for QR codes, but the bot needs json-rpc
-    # for WebSocket message receiving. Also locks down to 127.0.0.1 if
-    # remote mode was used during pairing.
-    echo -e "  Restarting Signal bridge in json-rpc mode..."
+fi
+
+# -----------------------------------------------------------------------------
+# Start Signal bridge in json-rpc mode (required for WebSocket messaging)
+# -----------------------------------------------------------------------------
+if command -v docker &> /dev/null && docker info &> /dev/null; then
+    echo ""
+    echo -e "${BLUE}Starting Signal bridge...${NC}"
+
+    mkdir -p "$SIGNAL_DATA_DIR"
     docker stop signal-api 2>/dev/null || true
     docker rm signal-api 2>/dev/null || true
 
