@@ -1,4 +1,4 @@
-# sidechannel
+# Sidechannel
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
@@ -7,13 +7,13 @@
 
 A Signal messaging bot that integrates Claude AI for intelligent conversations, code assistance, and autonomous development tasks with independent verification, parallel execution, and production-grade reliability.
 
-## Why sidechannel?
+## Why Sidechannel?
 
-Most AI coding tools require you to sit at your computer. sidechannel lets you manage your entire development workflow from your phone through Signal's end-to-end encrypted messaging. Whether you're commuting, in a meeting, or just away from your desk, you can:
+Most AI coding tools require you to sit at your computer. Sidechannel lets you manage your entire development workflow from your phone through Signal's end-to-end encrypted messaging. Whether you're commuting, in a meeting, or just away from your desk, you can:
 
 - **Ship code from your phone** - Ask Claude to implement features, fix bugs, or refactor code on any of your projects, all from a Signal message
-- **Delegate complex projects** - Describe what you want built, and sidechannel breaks it into a full PRD with stories and tasks, then executes them autonomously with parallel workers
-- **Never lose context** - Episodic memory with vector embeddings means sidechannel remembers your conversations, project preferences, and past decisions across sessions
+- **Delegate complex projects** - Describe what you want built, and Sidechannel breaks it into a full PRD with stories and tasks, then executes them autonomously with parallel workers
+- **Never lose context** - Episodic memory with vector embeddings means Sidechannel remembers your conversations, project preferences, and past decisions across sessions
 - **Trust the output** - Every autonomous task is independently verified by a separate Claude context using a fail-closed security model. Code that introduces security issues or logic errors is rejected automatically
 - **Powered by Claude** - All code analysis, generation, and autonomous tasks run through Claude (via Claude CLI). Optionally add OpenAI or Grok as lightweight quick-response assistants for general questions that don't need project access
 - **Stay secure** - Phone number allowlist, end-to-end encryption via Signal, rate limiting, path validation hardening, and no message content logging
@@ -21,10 +21,10 @@ Most AI coding tools require you to sit at your computer. sidechannel lets you m
 ### Key Benefits
 
 **Memory That Actually Works**
-Unlike chat-based tools that forget everything when you close a tab, sidechannel's episodic memory system stores conversations with vector embeddings. When you ask Claude to work on something, it automatically retrieves relevant context from past conversations, stored memories, and project-specific knowledge. Your `/remember` facts persist forever. Session context groups related messages automatically.
+Unlike chat-based tools that forget everything when you close a tab, Sidechannel's episodic memory system stores conversations with vector embeddings. When you ask Claude to work on something, it automatically retrieves relevant context from past conversations, stored memories, and project-specific knowledge. Your `/remember` facts persist forever. Session context groups related messages automatically.
 
 **Autonomous Development at Scale**
-Send `/complex Add user authentication with JWT tokens` and sidechannel will:
+Send `/complex Add user authentication with JWT tokens` and Sidechannel will:
 1. Use Claude to analyze the task and generate a full PRD
 2. Break it into stories with focused, atomic tasks
 3. Dispatch tasks to parallel workers (up to 10 concurrent)
@@ -254,7 +254,7 @@ The autonomous system handles complex, multi-step development tasks. It breaks w
 
 ### Memory & Context
 
-The memory system gives sidechannel persistent context across sessions. Conversations are automatically stored and indexed with vector embeddings for semantic search. You can also store explicit facts that persist forever.
+The memory system gives Sidechannel persistent context across sessions. Conversations are automatically stored and indexed with vector embeddings for semantic search. You can also store explicit facts that persist forever.
 
 | Command | Description |
 |---------|-------------|
@@ -299,7 +299,7 @@ The memory system gives sidechannel persistent context across sessions. Conversa
   → Searches memories and conversations across all projects
 ```
 
-### sidechannel AI Assistant (Optional)
+### Sidechannel AI Assistant (Optional)
 
 All code commands (`/ask`, `/do`, `/complex`) are powered by **Claude** via Claude CLI. Separately, you can enable a lightweight quick-response assistant backed by OpenAI (GPT-4o) or Grok for general knowledge questions that don't need project file access. This is optional — Claude handles all the real work.
 
@@ -461,7 +461,7 @@ launchctl unload ~/Library/LaunchAgents/com.sidechannel.bot.plist
 
 ## Plugin Framework
 
-sidechannel supports custom plugins so you can add your own functionality without touching the core codebase. Plugins are auto-discovered at startup, get their own config section, and integrate seamlessly with the bot's command system, message routing, and help output.
+Sidechannel supports custom plugins so you can add your own functionality without touching the core codebase. Plugins are auto-discovered at startup, get their own config section, and integrate seamlessly with the bot's command system, message routing, and help output.
 
 ### How Plugins Work
 
@@ -731,24 +731,24 @@ MY_PLUGIN_SECRET=xyz789
 
 ### Message Routing Order
 
-When a message arrives, sidechannel processes it in this order:
+When a message arrives, Sidechannel processes it in this order:
 
 1. **`/command`** — Core commands (help, projects, ask, do, etc.) checked first
 2. **Plugin commands** — `/commands` registered by plugins, in load order
 3. **Plugin message matchers** — Sorted by priority (lower number = checked first)
-4. **sidechannel assistant** — Messages starting with "sidechannel:" prefix
+4. **Sidechannel assistant** — Messages starting with "sidechannel:" prefix
 5. **Default** — Treated as `/do` if a project is selected
 
 Core commands always take precedence. If two plugins register the same `/command` name, the first-loaded plugin wins and a warning is logged.
 
 ## How the Memory System Works
 
-sidechannel uses a multi-layered memory architecture built on SQLite with sqlite-vec for vector similarity search:
+Sidechannel uses a multi-layered memory architecture built on SQLite with sqlite-vec for vector similarity search:
 
 1. **Automatic conversation storage** - Every message you send and every response is automatically stored with timestamps, project context, and command type
 2. **Session grouping** - Messages within a configurable timeout window (default: 30 min) are grouped into sessions for coherent context retrieval
 3. **Vector embeddings** - Stored messages are embedded using sentence-transformers (all-MiniLM-L6-v2) for semantic similarity search
-4. **Context injection** - When you run `/ask` or `/do`, sidechannel automatically retrieves the most relevant past conversations and memories, injecting them into Claude's context window
+4. **Context injection** - When you run `/ask` or `/do`, Sidechannel automatically retrieves the most relevant past conversations and memories, injecting them into Claude's context window
 5. **Explicit memories** - `/remember` facts are stored permanently and weighted higher in retrieval
 6. **Project isolation** - Memories are scoped to projects by default, with `/global` for cross-project knowledge
 7. **Token budgeting** - Retrieved context is capped at `max_context_tokens` (default: 1500) to leave room for Claude's actual work
