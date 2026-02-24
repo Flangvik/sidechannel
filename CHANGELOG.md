@@ -17,15 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Plugin auto-discovery** — plugins loaded automatically from `plugins/<name>/plugin.py`
 - **PluginContext API** — safe interface for plugins (send_message, config, env, logger)
 - **Priority message routing** — plugins can intercept messages before default routing
-- **Daily verse plugin** — scheduled Bible verse delivery (extracted from signal bot)
-- **BluOS music plugin** — multi-room speaker control (extracted from signal bot)
 - **Exception hierarchy** (`exceptions.py`) — structured error classification with retry support
 - **Attachment handling** (`attachments.py`) — image download and processing with size limits
 - **PRD builder** (`prd_builder.py`) — robust JSON parsing for autonomous PRDs
 - **Skill registry** (`skill_registry.py`) — Claude plugin discovery and matching
 
 ### Security
-- **XML entity attack prevention** — BluOS controller rejects DTD/ENTITY declarations in XML responses
 - **SecurityError hardened** — category is always PERMANENT and cannot be overridden
 - **Attachment size limit** — downloads capped at 50MB to prevent memory exhaustion
 

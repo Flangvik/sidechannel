@@ -346,11 +346,6 @@ class TestMyPlugin:
 
 Run tests: `python -m pytest tests/test_plugin_my_plugin.py -v`
 
-## Included Examples
+## Examples
 
-| Plugin | Directory | Description |
-|--------|-----------|-------------|
-| Daily Verse | `plugins/daily_verse/` | Scheduled Bible verse delivery via OpenAI/Grok |
-| BluOS Music | `plugins/bluos_music/` | Multi-room speaker control with NLP parsing |
-
-Study these for real-world patterns including API integration, background scheduling, NLP parsing, and config-driven zone management.
+See the plugin examples in this directory for real-world patterns including API integration, background scheduling, and config-driven management.

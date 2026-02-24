@@ -468,15 +468,9 @@ plugins/
 │   ├── __init__.py        # Required (can be empty)
 │   ├── plugin.py          # Required — contains your SidechannelPlugin subclass
 │   └── README.md          # Optional — plugin documentation
-├── daily_verse/           # Example: scheduled Bible verse delivery
-│   ├── __init__.py
-│   └── plugin.py
-└── bluos_music/           # Example: multi-room speaker control
+└── another_plugin/
     ├── __init__.py
-    ├── plugin.py
-    ├── bluos_controller.py
-    ├── nlp_parser.py
-    └── models.py
+    └── plugin.py
 ```
 
 At startup, the bot scans `plugins/` for directories containing `plugin.py`, finds your `SidechannelPlugin` subclass, and registers its commands, message matchers, and help sections. Broken or disabled plugins are logged and skipped — they never crash the bot.
@@ -718,12 +712,6 @@ plugins:
     default_city: "Columbus, OH"
     units: "imperial"
 
-  # Plugin that uses scheduled delivery
-  daily_verse:
-    enabled: true
-    hour: 8
-    minute: 30
-    recipients: ["+15551234567"]
 ```
 
 Access config values with `self.ctx.get_config("key", default)`. If no config section exists for your plugin, all `get_config` calls return the default value. Plugins default to `enabled: true` unless explicitly set to `false`.
@@ -749,42 +737,6 @@ When a message arrives, sidechannel processes it in this order:
 5. **Default** — Treated as `/do` if a project is selected
 
 Core commands always take precedence. If two plugins register the same `/command` name, the first-loaded plugin wins and a warning is logged.
-
-### Included Example Plugins
-
-#### Daily Verse (`plugins/daily_verse/`)
-
-Delivers a Bible verse to configured recipients on a schedule. Uses OpenAI or Grok for verse generation.
-
-```yaml
-plugins:
-  daily_verse:
-    enabled: true
-    hour: 8           # 24h format
-    minute: 0
-    recipients:       # Defaults to allowed_numbers if omitted
-      - "+15551234567"
-```
-
-Requires `OPENAI_API_KEY` or `GROK_API_KEY` in your `.env`. Also registers `/verse` for on-demand requests.
-
-#### BluOS Music (`plugins/bluos_music/`)
-
-Controls BluOS-compatible speakers (Bluesound, NAD) with natural language. Supports multi-room grouping, volume control, and playback management.
-
-```yaml
-plugins:
-  bluos_music:
-    enabled: true
-    players:
-      main_floor: { name: "Main Floor", ip: "10.0.0.1" }
-      bedroom: { name: "Bedroom", ip: "10.0.0.2" }
-    groups:
-      inside: [main_floor, bedroom]
-```
-
-Responds to natural language like "play jazz in the bedroom" and registers `/music` for direct control.
-
 
 ## How the Memory System Works
 
