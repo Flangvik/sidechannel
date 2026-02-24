@@ -133,3 +133,93 @@ class TestAutoUpdater:
         result = await updater.check_for_updates()
         assert result is True
         send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_apply_update_no_pending(self):
+        """apply_update returns message when no update pending."""
+        updater = self._make_updater()
+        result = await updater.apply_update()
+        assert result == "No updates available."
+
+    @pytest.mark.asyncio
+    async def test_apply_update_success(self):
+        """apply_update pulls, installs, and schedules restart."""
+        send = AsyncMock()
+        updater = self._make_updater(send_message=send)
+        updater.pending_update = True
+        updater.pending_sha = "def5678"
+
+        async def fake_run_git(*args, **kwargs):
+            if "rev-parse" in args:
+                return "abc1234"
+            return ""
+        updater._run_git = fake_run_git
+
+        with patch("sidechannel.updater.subprocess.run") as mock_run, \
+             patch("sidechannel.updater.asyncio.get_event_loop") as mock_loop:
+            mock_run.return_value = MagicMock(returncode=0, stderr="", stdout="")
+            mock_loop.return_value = MagicMock()
+            result = await updater.apply_update()
+
+        assert "Update applied" in result
+        assert updater.pending_update is False
+
+    @pytest.mark.asyncio
+    async def test_apply_update_git_pull_fails(self):
+        """apply_update notifies admin on git pull failure."""
+        send = AsyncMock()
+        updater = self._make_updater(send_message=send)
+        updater.pending_update = True
+        updater.pending_sha = "def5678"
+
+        call_count = 0
+        async def fake_run_git(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return "abc1234"  # rev-parse HEAD
+            # git pull fails
+            raise subprocess.CalledProcessError(1, ["git", "pull"], "", "merge conflict")
+        updater._run_git = fake_run_git
+
+        result = await updater.apply_update()
+        assert "failed" in result.lower()
+        send.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_apply_update_pip_fails_triggers_rollback(self):
+        """apply_update rolls back on pip install failure."""
+        send = AsyncMock()
+        updater = self._make_updater(send_message=send)
+        updater.pending_update = True
+        updater.pending_sha = "def5678"
+
+        async def fake_run_git(*args, **kwargs):
+            return "abc1234"
+        updater._run_git = fake_run_git
+        updater._rollback = AsyncMock()
+
+        with patch("sidechannel.updater.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stderr="error", stdout="")
+            result = await updater.apply_update()
+
+        assert "rolled back" in result.lower()
+        updater._rollback.assert_called_once_with("abc1234")
+
+    @pytest.mark.asyncio
+    async def test_start_stop_lifecycle(self):
+        """start() creates task, stop() cancels it."""
+        updater = self._make_updater()
+        await updater.start()
+        assert updater._check_task is not None
+        assert not updater._check_task.done()
+        await updater.stop()
+        assert updater._check_task.done()
+
+    @pytest.mark.asyncio
+    async def test_start_without_admin_phone(self):
+        """start() warns and does not create task if no admin phone."""
+        updater = self._make_updater()
+        updater.admin_phone = None
+        await updater.start()
+        assert updater._check_task is None
