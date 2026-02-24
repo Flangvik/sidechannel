@@ -532,7 +532,7 @@ EOF
     echo -e "${BLUE}Signal Pairing${NC}"
     echo ""
 
-    read -p "  Pair your phone with sidechannel now? [Y/n] " -n 1 -r
+    read -p "  Set up Signal pairing? (skip if already paired) [Y/n] " -n 1 -r
     echo ""
 
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
