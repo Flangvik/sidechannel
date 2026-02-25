@@ -22,6 +22,7 @@ from .autonomous import AutonomousManager, AutonomousCommands
 from .plugin_loader import PluginLoader
 from .updater import AutoUpdater
 from .prd_builder import clean_json_string, extract_balanced_json, parse_prd_json
+from .transcription import SUPPORTED_AUDIO_TYPES, transcribe_voice
 
 logger = structlog.get_logger()
 
@@ -1037,6 +1038,13 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
             if data_message:
                 message_text = data_message.get("message", "")
 
+                # Voice message: transcribe audio attachments when there is no text
+                if not message_text and self.config.voice_enabled:
+                    attachments = data_message.get("attachments", [])
+                    voice_text = await self._transcribe_voice_message(source, attachments)
+                    if voice_text:
+                        message_text = voice_text
+
             # Check for sync message (our own messages sent from another device)
             sync_message = envelope.get("syncMessage")
             if sync_message and not message_text:
@@ -1084,6 +1092,39 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
 
         except Exception as e:
             logger.error("message_handling_error", error=str(e), msg=str(msg)[:200])
+
+    async def _transcribe_voice_message(self, sender: str, attachments: list) -> Optional[str]:
+        """Download and transcribe the first audio attachment. Returns transcript or None."""
+        from .attachments import download_attachment  # already exists, reused as-is
+
+        for att in attachments:
+            content_type = att.get("contentType", "")
+            if content_type not in SUPPORTED_AUDIO_TYPES:
+                continue
+            att_id = att.get("id")
+            if not att_id:
+                continue
+
+            api_key = self.config.voice_api_key
+            if not api_key:
+                await self._send_message(sender,
+                    "Voice message received, but transcription is not configured.\n"
+                    "Add OPENAI_API_KEY to config/.env to enable.")
+                return None
+
+            audio_data = await download_attachment(self.session, self.config.signal_api_url, att_id)
+            if not audio_data:
+                return None
+
+            transcript = await transcribe_voice(
+                audio_data, content_type, api_key, self.session, self.config.voice_model
+            )
+            if transcript:
+                # Echo transcription back so sender sees what was heard
+                await self._send_message(sender, f"🎤 {transcript}")
+                return transcript
+
+        return None
 
     async def run(self):
         """Main run loop."""

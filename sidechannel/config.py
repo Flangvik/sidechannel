@@ -342,6 +342,25 @@ class Config:
         """Get sandbox configuration dict."""
         return self.settings.get("sandbox", {})
 
+    @property
+    def voice_enabled(self) -> bool:
+        """Voice transcription on if explicitly set, or auto-on when OPENAI_API_KEY present."""
+        voice_cfg = self.settings.get("voice", {})
+        explicit = voice_cfg.get("enabled")
+        if explicit is not None:
+            return bool(explicit)
+        return bool(os.environ.get("OPENAI_API_KEY"))
+
+    @property
+    def voice_api_key(self) -> str:
+        """OpenAI API key used for Whisper transcription."""
+        return os.environ.get("OPENAI_API_KEY", "")
+
+    @property
+    def voice_model(self) -> str:
+        """Whisper model name (default: whisper-1)."""
+        return self.settings.get("voice", {}).get("model", "whisper-1")
+
     def get_project_list(self) -> List[dict]:
         """Get list of registered projects."""
         return self.projects.get("projects", [])

@@ -76,6 +76,13 @@ sidechannel_assistant:
 #   - daily_verse
 #   - bluos_music
 
+# Voice Message Transcription (optional)
+# Transcribes Signal voice notes to text using OpenAI Whisper.
+# Auto-enabled when OPENAI_API_KEY is present in .env — no extra setup needed.
+# voice:
+#   enabled: true
+#   model: "whisper-1"
+
 # Auto-Update (optional, default off)
 # Periodically checks for new commits and notifies admin via Signal
 # auto_update:
