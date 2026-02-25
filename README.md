@@ -79,24 +79,57 @@ Send `/complex Add user authentication with JWT tokens` and Sidechannel will:
 
 ## Quick Start
 
+Clone the repo, then run the installer for your platform:
+
+**Linux**
 ```bash
-# Clone the repository
 git clone https://github.com/hackingdave/sidechannel.git
 cd sidechannel
-
-# Run the installer
 ./install.sh
+```
+
+**macOS** (Intel and Apple Silicon)
+```bash
+git clone https://github.com/hackingdave/sidechannel.git
+cd sidechannel
+./install-mac.sh
+```
+
+**Windows** (PowerShell, run as Administrator)
+```powershell
+git clone https://github.com/hackingdave/sidechannel.git
+cd sidechannel
+.\install.ps1
 ```
 
 The installer walks you through everything: Python venv setup, phone number, Signal pairing (scan a QR code), and starting the service. No manual setup needed.
 
-The installer supports flags for advanced usage:
+Phone numbers must be in **E.164 international format** — `+` followed by country code and number, no spaces or dashes. Works with any country Signal supports:
+
+| Country | Example |
+|---------|---------|
+| US / Canada | `+12025551234` |
+| UK | `+447911123456` |
+| Germany | `+4915212345678` |
+| France | `+33612345678` |
+| Australia | `+61412345678` |
+| Japan | `+819012345678` |
+
+**Installer flags:**
 
 ```bash
-./install.sh --skip-signal    # Skip Signal pairing setup
-./install.sh --skip-systemd   # Skip service installation
-./install.sh --restart        # Restart the sidechannel service
-./install.sh --uninstall      # Remove sidechannel service and containers
+# Linux / macOS
+./install.sh --skip-signal    # Skip Signal pairing (configure later)
+./install.sh --skip-systemd   # Skip service install (Linux)
+./install-mac.sh --skip-service  # Skip service install (macOS)
+./install.sh --restart        # Restart the service
+./install.sh --uninstall      # Remove service and containers
+
+# Windows (PowerShell)
+.\install.ps1 -SkipSignal     # Skip Signal pairing
+.\install.ps1 -SkipService    # Skip scheduled task install
+.\install.ps1 -Restart        # Restart the scheduled task
+.\install.ps1 -Uninstall      # Remove task and containers
 ```
 
 ## Requirements
@@ -104,11 +137,11 @@ The installer supports flags for advanced usage:
 | Dependency | Notes |
 |---|---|
 | **Python 3.9+** | Required |
-| **Docker** | Required for Signal bridge container |
+| **Docker** | Required for Signal bridge (multi-arch: amd64 + arm64) |
 | **Claude CLI** | Recommended (powers /ask, /do, /complex) |
-| **Signal account** | Required |
+| **Signal account** | Required — any country Signal supports |
 
-The bot runs natively in a Python venv, managed by systemd (Linux) or launchd (macOS). Docker is only used for the Signal bridge (signal-cli-rest-api).
+The bot runs natively in a Python venv, managed by systemd (Linux), launchd (macOS), or a Scheduled Task (Windows). Docker is only used for the Signal bridge (signal-cli-rest-api), which is a multi-arch image — no Rosetta needed on Apple Silicon.
 
 ---
 
@@ -343,9 +376,10 @@ When an update is detected, the bot sends a Signal message to the admin (first n
 ### settings.yaml
 
 ```yaml
-# Phone numbers authorized to use the bot (E.164 format)
+# Phone numbers authorized to use the bot (E.164 international format)
+# Examples: +12025551234 (US), +447911123456 (UK), +4915212345678 (DE)
 allowed_numbers:
-  - "+15551234567"
+  - "+XXXXXXXXXXX"
 
 # Signal CLI REST API
 signal_api_url: "http://127.0.0.1:8080"
@@ -430,7 +464,7 @@ projects:
     path: /home/user/projects/private
     description: "Restricted access"
     allowed_numbers:
-      - "+15551234567"
+      - "+XXXXXXXXXXX"   # E.164 format, any country
 ```
 
 **Per-user project scoping:** Each phone number has its own active project selection, so multiple users can work on different projects simultaneously. Projects without `allowed_numbers` are visible to everyone. Projects with `allowed_numbers` are only shown in `/projects` and selectable via `/select` for listed numbers.

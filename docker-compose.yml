@@ -1,11 +1,22 @@
 # Signal CLI REST API bridge for sidechannel
 #
-# The bot runs natively (Python venv + systemd/launchd).
+# The bot runs natively (Python venv + systemd/launchd/Task Scheduler).
 # This compose file only runs the Signal messaging bridge.
+#
+# Cross-platform:
+#   - Linux (x86_64 / ARM64)
+#   - macOS (Intel and Apple Silicon — native ARM64 image, no Rosetta needed)
+#   - Windows (via Docker Desktop with WSL2 backend)
+#
+# The image is multi-arch (linux/amd64 + linux/arm64).
+# Docker automatically selects the correct variant — no manual configuration needed.
 #
 # Usage:
 #   docker compose up -d
 #   docker compose logs -f signal-api
+#
+# To temporarily expose on all interfaces for remote QR code scanning:
+#   SIGNAL_HOST=0.0.0.0 docker compose up -d
 
 services:
   signal-api:
@@ -13,7 +24,7 @@ services:
     container_name: signal-api
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080"
+      - "${SIGNAL_HOST:-127.0.0.1}:8080:8080"
     volumes:
       - ./signal-data:/home/.local/share/signal-cli
     environment:

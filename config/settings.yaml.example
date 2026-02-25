@@ -1,10 +1,13 @@
 # sidechannel configuration
 # Copy to settings.yaml and customize
 
-# Phone numbers authorized to use the bot (E.164 format)
+# Phone numbers authorized to use the bot (E.164 international format)
 # IMPORTANT: Replace with your actual phone number
+# Format: +<country code><number> — no spaces, dashes, or parentheses
+# Examples: +12025551234 (US), +447911123456 (UK), +4915212345678 (DE),
+#           +33612345678 (FR), +61412345678 (AU), +819012345678 (JP)
 allowed_numbers:
-  - "+1XXXXXXXXXX"
+  - "+XXXXXXXXXXX"
 
 # Signal CLI REST API connection
 signal_api_url: "http://127.0.0.1:8080"
@@ -59,7 +62,7 @@ sidechannel_assistant:
 #     enabled: true
 #     hour: 8
 #     minute: 30
-#     recipients: ["+1XXXXXXXXXX"]   # defaults to allowed_numbers
+#     recipients: ["+XXXXXXXXXXX"]   # defaults to allowed_numbers
 #   bluos_music:
 #     enabled: true
 #     players:
