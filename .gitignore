@@ -52,6 +52,17 @@ tests/
 # Internal plans/docs
 docs/plans/
 
+# Claude Code artifacts
+CLAUDE.md
+.claude/
+
+# Debug/scratch files
+debug_*.json
+scripts/debug_*
+
+# Local run scripts (contain machine-specific paths)
+run.sh
+
 # Private plugins
 plugins/daily_verse/
 plugins/bluos_music/

@@ -284,6 +284,53 @@ class Config:
                     return default
         return default
 
+    @property
+    def nightwire_max_tool_iterations(self) -> int:
+        """Max agentic tool-calling loop iterations (safety cap)."""
+        sc_config = self._get_dict_setting("nightwire_assistant", "sidechannel_assistant")
+        val = sc_config.get("max_tool_iterations")
+        if val is not None:
+            try:
+                return max(1, min(int(val), 20))
+            except (ValueError, TypeError):
+                pass
+        return 8
+
+    @property
+    def nightwire_ask_user_timeout(self) -> int:
+        """Seconds to wait for user reply when the agentic loop asks a question."""
+        sc_config = self._get_dict_setting("nightwire_assistant", "sidechannel_assistant")
+        val = sc_config.get("ask_user_timeout")
+        if val is not None:
+            try:
+                return max(30, min(int(val), 600))
+            except (ValueError, TypeError):
+                pass
+        return 300
+
+    # Voice transcription configuration
+    @property
+    def voice_enabled(self) -> bool:
+        """Whether voice transcription is enabled. Auto-enables if OPENAI_API_KEY is set."""
+        voice_config = self.settings.get("voice", {})
+        if isinstance(voice_config, dict) and voice_config.get("enabled") is not None:
+            return voice_config.get("enabled", False)
+        # Auto-enable if OPENAI_API_KEY is available
+        return bool(os.environ.get("OPENAI_API_KEY"))
+
+    @property
+    def voice_api_key(self) -> str:
+        """Return the API key for voice transcription (Whisper)."""
+        return os.environ.get("OPENAI_API_KEY", "")
+
+    @property
+    def voice_model(self) -> str:
+        """Return the Whisper model name."""
+        voice_config = self.settings.get("voice", {})
+        if isinstance(voice_config, dict):
+            return voice_config.get("model", "whisper-1")
+        return "whisper-1"
+
     # Memory configuration
     @property
     def memory_session_timeout(self) -> int:

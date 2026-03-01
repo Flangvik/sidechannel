@@ -7,13 +7,14 @@ import time as _time
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 import aiohttp
 import structlog
 
-from .attachments import process_attachments
+from .attachments import process_attachments, download_attachment
+from .transcription import SUPPORTED_AUDIO_TYPES, transcribe_voice
 from .config import get_config
 from .security import is_authorized, sanitize_input, check_rate_limit
 from .claude_runner import get_runner
@@ -55,6 +56,8 @@ class SignalBot:
                     api_key=self.config.nightwire_assistant_api_key,
                     model=self.config.nightwire_assistant_model,
                     max_tokens=self.config.nightwire_assistant_max_tokens,
+                    max_iterations=self.config.nightwire_max_tool_iterations,
+                    ask_user_timeout=self.config.nightwire_ask_user_timeout,
                 )
                 logger.info(
                     "nightwire_runner_initialized",
@@ -78,6 +81,10 @@ class SignalBot:
         # across users AND across different projects for the same user.
         # Key: (sender_phone, project_name), Value: dict with task, description, start, step
         self._sender_tasks: Dict[tuple, dict] = {}
+
+        # Pending questions from the agentic voice loop (ask_user tool).
+        # Key: sender phone number, Value: asyncio.Future that resolves with the user's reply.
+        self._pending_questions: Dict[str, asyncio.Future] = {}
 
         # File to persist interrupted tasks across restarts
         self._interrupted_tasks_file = Path(self.config.config_dir).parent / "data" / "interrupted_tasks.json"
@@ -716,7 +723,7 @@ class SignalBot:
                 return "nightwire assistant is not enabled. Set nightwire_assistant.enabled: true in settings.yaml and provide OPENAI_API_KEY or GROK_API_KEY."
             if not args:
                 return "Usage: /nightwire <question>\nAsk the AI assistant anything."
-            return await self._nightwire_response(args)
+            return await self._nightwire_response(args, sender=sender)
 
         elif command == "update":
             # Only admin (first allowed number) can trigger updates
@@ -1245,7 +1252,7 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
             logger.error("prd_creation_error", error=str(e), exc_type=type(e).__name__)
             return "PRD creation failed. Please try again or check logs."
 
-    async def _process_message(self, sender: str, message: str, image_paths: Optional[list] = None):
+    async def _process_message(self, sender: str, message: str, image_paths: Optional[list] = None, source_voice: bool = False):
         """Process an incoming message."""
         if image_paths is None:
             image_paths = []
@@ -1265,6 +1272,14 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
         message = sanitize_input(message.strip())
 
         if not message and not image_paths:
+            return
+
+        # If the agentic loop is waiting for a reply from this sender (ask_user tool),
+        # deliver the message to the waiting Future instead of normal routing.
+        pending_future = self._pending_questions.get(sender)
+        if pending_future and not pending_future.done():
+            logger.info("pending_question_answered", sender="..." + sender[-4:], length=len(message))
+            pending_future.set_result(message)
             return
 
         logger.info(
@@ -1308,9 +1323,10 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
                         response = await matcher.handle_fn(sender, message)
                         break
 
-            if response is None and message and self._is_nightwire_query(message):
-                # Addressed to nightwire - general AI assistant mode
-                response = await self._nightwire_response(message)
+            if response is None and (self._is_nightwire_query(message) or source_voice):
+                # Addressed to nightwire (explicit prefix or voice message)
+                # The agentic loop handles tool calling and command execution internally.
+                response = await self._nightwire_response(message, sender=sender, source_voice=source_voice)
             elif response is None:
                 # Treat non-command messages as /do commands if a project is selected
                 if self.cooldown_manager and self.cooldown_manager.is_active:
@@ -1364,13 +1380,48 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
             return True
         return False
 
-    async def _nightwire_response(self, message: str) -> str:
-        """Generate a nightwire response using the configured provider."""
+    async def _nightwire_response(self, message: str, sender: str = "", source_voice: bool = False) -> str:
+        """Generate a nightwire response using the agentic tool-calling loop."""
         if not self.nightwire_runner:
             return "nightwire assistant is not enabled. Set nightwire_assistant.enabled: true in settings.yaml and provide OPENAI_API_KEY or GROK_API_KEY."
         try:
-            logger.info("nightwire_query", length=len(message))
-            success, response = await self.nightwire_runner.ask_nightwire(message)
+            logger.info("nightwire_query", length=len(message), source_voice=source_voice)
+            context_hint = "Voice message transcription." if source_voice else None
+
+            # Build live context for the AI
+            context = await self._build_nightwire_context(sender)
+
+            # Tool executor: maps tool name -> command dispatch through _handle_command
+            async def tool_executor(command: str, args: str) -> Optional[str]:
+                return await self._handle_command(command, args, sender)
+
+            # Ask user: sends a question via Signal and waits for the user's reply
+            async def ask_user_fn(question: str) -> str:
+                await self._send_message(sender, f"[Question] {question}")
+                loop = asyncio.get_running_loop()
+                future: asyncio.Future = loop.create_future()
+                self._pending_questions[sender] = future
+                try:
+                    reply = await asyncio.wait_for(
+                        future,
+                        timeout=self.config.nightwire_ask_user_timeout,
+                    )
+                    return reply
+                finally:
+                    self._pending_questions.pop(sender, None)
+
+            # Progress callback: send intermediate results to the user
+            async def progress_fn(update: str) -> None:
+                await self._send_message(sender, update)
+
+            success, response = await self.nightwire_runner.ask_nightwire(
+                message,
+                context_hint=context_hint,
+                context=context,
+                tool_executor=tool_executor,
+                ask_user_fn=ask_user_fn,
+                progress_fn=progress_fn,
+            )
             if not response or not response.strip():
                 logger.warning("nightwire_empty_response")
                 return "The assistant returned an empty response. Please try again."
@@ -1378,6 +1429,50 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
         except Exception as e:
             logger.error("nightwire_response_error", error=str(e), exc_type=type(e).__name__)
             return "The assistant encountered an error. Please try again later."
+
+    async def _build_nightwire_context(self, sender: str) -> Dict[str, Any]:
+        """Build live context dict for the agentic loop's system prompt."""
+        context: Dict[str, Any] = {}
+
+        # Current project
+        current = self.project_manager.get_current_project(sender)
+        context["current_project"] = current
+
+        # Available projects
+        try:
+            projects_text = self.project_manager.list_projects(sender)
+            names = []
+            for line in projects_text.splitlines():
+                line = line.strip()
+                if line.startswith("- ") or line.startswith("* "):
+                    name = line.lstrip("-* ").split()[0] if line.lstrip("-* ") else ""
+                    if name:
+                        names.append(name)
+            context["available_projects"] = names
+        except Exception:
+            context["available_projects"] = []
+
+        # Running task for this sender (check all projects)
+        for (s, p), state in self._sender_tasks.items():
+            if s == sender and state.get("task") and not state["task"].done():
+                desc = state.get("description", "unknown")[:120]
+                context["task_running"] = f"{desc} (project: {p})"
+                break
+
+        # Autonomous loop status
+        try:
+            if self.autonomous_manager:
+                loop_status = await self.autonomous_manager.get_loop_status()
+                if loop_status.is_running:
+                    context["autonomous_status"] = f"running (queued: {loop_status.tasks_queued}, done today: {loop_status.tasks_completed_today})"
+                elif loop_status.is_paused:
+                    context["autonomous_status"] = "paused"
+                else:
+                    context["autonomous_status"] = "stopped"
+        except Exception:
+            pass
+
+        return context
 
     async def _health_watchdog(self):
         """Periodic health check that monitors bot responsiveness.
@@ -1477,6 +1572,7 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
             source = envelope.get("source") or envelope.get("sourceNumber") or envelope.get("sourceUuid")
             message_text = None
             attachments_list = []
+            from_voice = False
 
             # Check for regular data message (from others TO us)
             data_message = envelope.get("dataMessage")
@@ -1502,7 +1598,14 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
                         attachments_list = sent_message.get("attachments") or []
                         source = self.account
 
-            # Download and save any image attachments
+            # Voice message: transcribe audio attachments when there is no text
+            if not (message_text and message_text.strip()) and self.config.voice_enabled and source:
+                voice_text = await self._transcribe_voice_message(source, attachments_list)
+                if voice_text:
+                    message_text = voice_text
+                    from_voice = True
+
+            # Download and save any image attachments (non-audio)
             image_paths = []
             if attachments_list and source and self.session:
                 image_paths = await process_attachments(
@@ -1550,10 +1653,44 @@ Return ONLY valid JSON, no markdown code blocks, no explanation."""
 
             logger.info("processing_message", source="..." + source[-4:],
                         length=len(message_text), attachments=len(image_paths))
-            await self._process_message(source, message_text, image_paths=image_paths)
+            await self._process_message(source, message_text, image_paths=image_paths, source_voice=from_voice)
 
         except Exception as e:
             logger.error("message_handling_error", error=str(e), msg=str(msg)[:200])
+
+    async def _transcribe_voice_message(self, sender: str, attachments: list) -> Optional[str]:
+        """Download and transcribe the first audio attachment. Returns transcript or None."""
+        for att in attachments:
+            if not isinstance(att, dict):
+                continue
+            content_type = (att.get("contentType") or att.get("content_type") or "").strip()
+            att_id = att.get("id") or att.get("attachmentId")
+            if not att_id:
+                continue
+            if content_type and content_type not in SUPPORTED_AUDIO_TYPES:
+                continue
+            if not content_type:
+                content_type = "audio/ogg"
+
+            api_key = self.config.voice_api_key
+            if not api_key:
+                await self._send_message(sender,
+                    "Voice message received, but transcription is not configured.\n"
+                    "Add OPENAI_API_KEY to config/.env to enable.")
+                return None
+
+            audio_data = await download_attachment(self.session, self.config.signal_api_url, att_id)
+            if not audio_data:
+                return None
+
+            transcript = await transcribe_voice(
+                audio_data, content_type, api_key, self.session, self.config.voice_model
+            )
+            if transcript:
+                await self._send_message(sender, f"Voice: {transcript}")
+                return transcript
+
+        return None
 
     async def run(self):
         """Main run loop."""
