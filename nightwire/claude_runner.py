@@ -376,6 +376,21 @@ class ClaudeRunner:
 
             result = output if output else errors
 
+            # Detect "max turns reached" — Claude completed but couldn't finish
+            # the task within the turn limit. Report this clearly.
+            result_lower = result.lower().strip()
+            if "reached max turns" in result_lower or "max turns" in result_lower:
+                max_turns = self.config.claude_max_turns
+                logger.warning("claude_max_turns_reached", max_turns=max_turns, output=result[:200])
+                return (
+                    False,
+                    f"Task didn't complete within {max_turns} turns. "
+                    f"This usually means the task is too complex or a command is blocking.\n"
+                    f"Try breaking it into smaller steps, or check if an interactive app (ngrok, server, etc.) "
+                    f"needs to be run in the background.",
+                    ErrorCategory.PERMANENT,
+                )
+
             return True, result, ErrorCategory.PERMANENT
 
         except FileNotFoundError:
